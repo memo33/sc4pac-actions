@@ -173,7 +173,7 @@ class DependencyChecker:
     naming_convention_variants_value = re.compile(r"[a-z0-9]+([-\.][a-z0-9]+)*", re.IGNORECASE)
     naming_convention_variants = re.compile(  # group:package:variant (regex groups: \1:\2:\3)
             rf"(?:({naming_convention.pattern}):)?(?:({naming_convention.pattern}):)?([a-zA-Z0-9]+(?:[-\.][a-zA-Z0-9]+)*)")
-    naming_convention_files = re.compile(r"[a-z0-9]+([-\./][a-z0-9]+)*", re.IGNORECASE)
+    naming_convention_files = re.compile(r"[a-z0-9]+([-\./\\][a-z0-9]+)*", re.IGNORECASE)
     version_rel_pattern = re.compile(r"(.*?)(-\d+)?")
     pronouns_pattern = re.compile(r"\b[Mm][ey]\b|(?:\bI\b(?!-|\.| [A-Z]))")
     desc_invalid_chars_pattern = re.compile(r'\\n|\\"')
