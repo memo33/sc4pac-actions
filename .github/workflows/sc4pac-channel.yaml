@@ -48,10 +48,12 @@ jobs:
         ref: ${{ github.event_name == 'pull_request_target' && format('refs/pull/{0}/merge', github.event.pull_request.number) || '' }}
         sparse-checkout: |
           ${{ inputs.path }}
-    - name: Run linter
-      uses: memo33/sc4pac-actions/actions/lint@main
-      with:
-        path: ${{ inputs.path }}
+    - name: Install sc4pac-lint
+      uses: memo33/sc4pac-actions/actions/setup-lint@main
+    - name: Lint
+      run: sc4pac-lint "$SRC_YAML"
+      env:
+        SRC_YAML: ${{ inputs.path }}
 
   url-check:
     # requires STEX_API_KEY, so job is skipped in forks

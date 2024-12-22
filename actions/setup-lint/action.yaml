@@ -1,0 +1,16 @@
+name: setup-lint
+description: Installs `sc4pac-lint` executable and its dependencies
+
+runs:
+  using: composite
+  steps:
+  - name: Set up Python
+    uses: actions/setup-python@v5
+    with:
+      python-version: '3.x'
+  - name: Install dependencies
+    shell: bash
+    run: python -m pip install --upgrade PyYAML jsonschema
+  - name: Install sc4pac-lint
+    shell: bash
+    run: sudo ln -s "$GITHUB_ACTION_PATH/../../src/lint.py" /usr/local/bin/sc4pac-lint
