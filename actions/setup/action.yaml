@@ -11,7 +11,7 @@ runs:
       : Install sc4pac
       # download and extract latest sc4pac CLI
       SC4PAC_ZIP_URL="$(curl -s https://api.github.com/repos/memo33/sc4pac-tools/releases/latest | grep browser_download_url | cut -d '"' -f 4)"
-      curl -L "$SC4PAC_ZIP_URL" > sc4pac-latest.zip
+      curl -s -L "$SC4PAC_ZIP_URL" > sc4pac-latest.zip
       sudo unzip -q -d /usr/local/lib/sc4pac sc4pac-latest.zip
       rm -f sc4pac-latest.zip
       sudo ln -s /usr/local/lib/sc4pac/sc4pac /usr/local/bin/sc4pac
