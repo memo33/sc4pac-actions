@@ -178,6 +178,7 @@ class DependencyChecker:
     pronouns_pattern = re.compile(r"\b[Mm][ey]\b|(?:\bI\b(?!-|\.| [A-Z]))")
     desc_invalid_chars_pattern = re.compile(r'\\n|\\"')
     sha256_pattern = re.compile(r"[a-f0-9]*", re.IGNORECASE)
+    gh_url_pattern = re.compile(r"^https://github\.com/([^/]+)/(?:[^/]+)/releases/download/.*")
 
     def __init__(self, *, config):
         self.config = config
@@ -200,7 +201,8 @@ class DependencyChecker:
         self.packages_with_single_assets = {}  # pkg -> (version, set of assets from variants)
         self.packages_using_asset = {}  # asset -> set of packages
         self.dlls_without_checksum = set()
-        self.http_without_checksum = set()
+        self.assets_http_without_checksum = set()
+        self.packages_with_checksum = []  # (pkg, group, assetId)
         self.unexpected_variant_specific_dependencies = []  # (pkg, dependency)
 
     def aggregate_identifiers(self, doc):
@@ -216,7 +218,7 @@ class DependencyChecker:
             if not self.naming_convention.fullmatch(asset):
                 self.invalid_asset_names.add(asset)
             if urlparse(url).scheme not in ['https', 'file'] and 'checksum' not in doc:
-                self.http_without_checksum.add(asset)
+                self.assets_http_without_checksum.add(asset)
         if 'group' in doc and 'name' in doc:
             pkg = doc['group'] + ":" + doc['name']
             if pkg not in self.known_packages:
@@ -284,16 +286,16 @@ class DependencyChecker:
                         self.invalid_variant_names.add(value)
 
             is_dll = ("DLL" in doc.get('info', {}).get('summary', "")) or ("dll" in doc['name'].split('-'))
-            if is_dll:
-                has_asset = False
-                has_checksum = False
-                for obj in iterate_doc_and_variants():
-                    for asset in obj.get('assets', []):
-                        has_asset = True
-                        if "withChecksum" in asset:
-                            has_checksum = True
-                if has_asset and not has_checksum:
-                    self.dlls_without_checksum.add(pkg)
+            has_asset = False
+            has_checksum = False
+            for obj in iterate_doc_and_variants():
+                for asset in obj.get('assets', []):
+                    has_asset = True
+                    if "withChecksum" in asset:
+                        has_checksum = True
+                        self.packages_with_checksum.append((pkg, doc['group'], asset.get('assetId')))
+            if is_dll and has_asset and not has_checksum:
+                self.dlls_without_checksum.add(pkg)
 
 
     def _get_channel_contents(self, channel_url):
@@ -351,6 +353,26 @@ class DependencyChecker:
                     v2 = self._version_without_rel(self.asset_versions.get(asset, 'None'))
                     if v1 != v2:
                         yield (pkg, v1, asset, v2)
+
+    def dlls_without_github_messages(self):
+        ignore_non_gh = set(self.config['ignore-non-github-urls'])
+        grp2gh = {}  # group -> set()
+        for d in self.config['group-to-github']:
+            for group, gh_owner in d.items():
+                if group in grp2gh:
+                    grp2gh[group].add(gh_owner)
+                else:
+                    grp2gh[group] = {gh_owner}
+        for pkg, group, asset in self.packages_with_checksum:
+            m = self.gh_url_pattern.fullmatch(self.asset_urls[asset])
+            if not m:
+                if asset not in ignore_non_gh:
+                    yield f"""Asset "{asset}" should use a GitHub download "url", as it appears to be a DLL used by "{pkg}"."""
+            else:
+                gh_owner = m.group(1)
+                if gh_owner not in grp2gh.get(group, set()):
+                    yield f"""GitHub account "{gh_owner}" for asset "{asset}" is not known to belong to group "{group}" """ \
+                            "(a new mapping needs to be defined in lint-config.yaml)."
 
 
 def validate_document_separators(text) -> None:
@@ -441,6 +463,8 @@ def load_config(config_path):
         'subfolders': [],
         'ignore-version-mismatches': [],
         'allow-ego-perspective': False,
+        'group-to-github': [],
+        'ignore-non-github-urls': [],
     }
     try:
         with open(config_path, encoding='utf-8') as f:
@@ -538,7 +562,8 @@ def main() -> int:
                      "The versions of the following packages do not match the version of the referenced assets (usually they should agree, but if the version mismatch is intentional, the packages can be added to the 'ignore-version-mismatches' list in lint-config.yaml):",
                      lambda tup: """{0} "{1}" (expected version "{3}" of asset {2})""".format(*tup))  # pkg, v1, asset, v2
         basic_report(dependency_checker.dlls_without_checksum, "The following packages appear to contain DLLs. A sha256 checksum is required for DLLs (add a `withChecksum` field).")
-        basic_report(dependency_checker.http_without_checksum, "The following assets use http instead of https. They should include a `checksum` field.")
+        basic_report(dependency_checker.assets_http_without_checksum, "The following assets use http instead of https. They should include a `checksum` field.")
+        basic_report(list(dependency_checker.dlls_without_github_messages()), "DLLs should be downloaded from the author's GitHub releases to ensure authenticity.")
 
     if errors > 0:
         print(f"Finished with {errors} errors.")

@@ -24,8 +24,8 @@ jobs:
       channel-label: Owner           # your name or other suitable label
       deploy-repository: OWNER/REPO  # your GitHub repository
       use-stex-api: false            # optionally enable the STEX API calls if you have a private key
-    secrets:
-      # stex-api-key: ${{ secrets.STEX_API_KEY }}  # set the STEX_API_KEY under: Settings > Secrets and variables > Actions > Repository secrets
+    #secrets:
+    #  stex-api-key: ${{ secrets.STEX_API_KEY }}  # set the STEX_API_KEY under: Settings > Secrets and variables > Actions > Repository secrets
     permissions:
       pages: write                   # to deploy to GitHub Pages
       id-token: write                # to verify the deployment originates from an appropriate source
@@ -46,4 +46,9 @@ ignore-version-mismatches: []
 
 # Set this to true to allow writing descriptions from a first-person perspective.
 allow-ego-perspective: false
+
+# For downloading DLLs from GitHub, define a mapping between groups and GH accounts.
+# group-to-github:
+# - null-45: "0xC0000054"
+# - simmaster07: nsgomez
 ```
