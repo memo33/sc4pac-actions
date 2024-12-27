@@ -156,6 +156,7 @@ def create_schema(config):
                     "author": {"type": "string"},
                     "images": unique_strings,
                     "website": {"type": "string", "validate_query_params": True},
+                    "websites": {**unique_strings, "validate_query_params": True},
                 },
             },
         },
@@ -204,6 +205,7 @@ class DependencyChecker:
         self.assets_http_without_checksum = set()
         self.packages_with_checksum = []  # (pkg, group, assetId)
         self.unexpected_variant_specific_dependencies = []  # (pkg, dependency)
+        self.duplicate_website_fields = set()
 
     def aggregate_identifiers(self, doc):
         if 'assetId' in doc:
@@ -285,7 +287,11 @@ class DependencyChecker:
                     if not self.naming_convention_variants_value.fullmatch(value):
                         self.invalid_variant_names.add(value)
 
-            is_dll = ("DLL" in doc.get('info', {}).get('summary', "")) or ("dll" in doc['name'].split('-'))
+            info = doc.get('info', {})
+            if 'website' in info and 'websites' in info:
+                self.duplicate_website_fields.add(pkg)
+
+            is_dll = ("DLL" in info.get('summary', "")) or ("dll" in doc['name'].split('-'))
             has_asset = False
             has_checksum = False
             for obj in iterate_doc_and_variants():
@@ -407,15 +413,18 @@ def create_validators(config):
         ("simtropolis.com", ("confirm", "t", "csrfKey")),
     ]
 
-    def validate_query_params(validator, value, url, schema):
+    def validate_query_params(validator, value, urls, schema):
+        if isinstance(urls, str):
+            urls = [urls]
         msgs = []
-        if '/sc4evermore.com/' in url:
-            msgs.append(f"Domain of URL {url} should be www.sc4evermore.com (add www.)")
-        qs = parse_qs(urlparse(url).query)
-        bad_params = [p for domain, params in _irrelevant_query_parameters
-                      if domain in url for p in params if p in qs]
-        if bad_params:
-            msgs.append(f"Avoid these URL query parameters: {', '.join(bad_params)}")
+        for url in urls:
+            if '/sc4evermore.com/' in url:
+                msgs.append(f"Domain of URL {url} should be www.sc4evermore.com (add www.)")
+            qs = parse_qs(urlparse(url).query)
+            bad_params = [p for domain, params in _irrelevant_query_parameters
+                          if domain in url for p in params if p in qs]
+            if bad_params:
+                msgs.append(f"Avoid these URL query parameters: {', '.join(bad_params)}")
         if msgs:
             yield ValidationError('\n'.join(msgs))
 
@@ -564,6 +573,7 @@ def main() -> int:
         basic_report(dependency_checker.dlls_without_checksum, "The following packages appear to contain DLLs. A sha256 checksum is required for DLLs (add a `withChecksum` field).")
         basic_report(dependency_checker.assets_http_without_checksum, "The following assets use http instead of https. They should include a `checksum` field.")
         basic_report(list(dependency_checker.dlls_without_github_messages()), "DLLs should be downloaded from the author's GitHub releases to ensure authenticity.")
+        basic_report(dependency_checker.duplicate_website_fields, """The following packages define both "website" and "websites" fields (use only one of them):""")
 
     if errors > 0:
         print(f"Finished with {errors} errors.")
