@@ -180,6 +180,8 @@ class DependencyChecker:
     desc_invalid_chars_pattern = re.compile(r'\\n|\\"')
     sha256_pattern = re.compile(r"[a-f0-9]*", re.IGNORECASE)
     gh_url_pattern = re.compile(r"^https://github\.com/([^/]+)/(?:[^/]+)/releases/download/.*")
+    unescaped_paren_open  = re.compile(r"(?<!\\)\((?!\?)")  # a `(` not preceded by `\` or followed by `?`
+    unescaped_paren_close = re.compile(r"(?<!\\)\)(?!\?)")  # a `)` not preceded by `\` or followed by `?`
 
     def __init__(self, *, config):
         self.config = config
@@ -404,9 +406,18 @@ def create_validators(config):
 
     def validate_pattern(validator, value, instance, schema):
         patterns = [instance] if isinstance(instance, str) else instance
-        bad_patterns = [p for p in patterns if p.startswith('.*')]
-        if bad_patterns:
-            yield ValidationError(f"include/exclude patterns should not start with '.*' in {bad_patterns}")
+        msgs = []
+        bad_prefix = [p for p in patterns if p.startswith('.*')]
+        if bad_prefix:
+            msgs.append(f"include/exclude patterns should not start with '.*' in {bad_prefix}")
+        bad_parens = [p for p in patterns if
+                      DependencyChecker.unescaped_paren_open.search(p) and ")?" not in p or
+                      DependencyChecker.unescaped_paren_close.search(p) and "(?" not in p]
+        if bad_parens:
+            msgs.append(rf"Parentheses in include/exclude patterns need to be escaped: use `\(...\)` for literals or `(?:...)` for regex-grouping in {bad_parens}. "
+                        r"If the include/exclude pattern is surrounded by double quotes in YAML, then use double-backslashes: `\\(...\\)`.")
+        if msgs:
+            yield ValidationError('\n'.join(msgs))
 
     _irrelevant_query_parameters = [
         ("sc4evermore.com", ("catid",)),
