@@ -162,10 +162,11 @@ def create_schema(config):
         },
     }
 
-    schema = {
-        "oneOf": [asset_schema, package_schema]
-    }
-    return schema
+    # Using this combined schema would lead to unhelpful error messages in case neither schema fully matches.
+    # schema = {
+    #     "oneOf": [package_schema, asset_schema]
+    # }
+    return package_schema, asset_schema
 
 
 class DependencyChecker:
@@ -510,12 +511,15 @@ def main() -> int:
         break
     config = load_config(config_path)
 
-    schema = create_schema(config)
-    validator = jsonschema.validators.extend(
-            jsonschema.validators.Draft202012Validator,
-            validators=create_validators(config),
-        )(schema)
-    validator.check_schema(schema)
+    def validator_from_schema(schema):
+        validator = jsonschema.validators.extend(
+                jsonschema.validators.Draft202012Validator,
+                validators=create_validators(config),
+            )(schema)
+        validator.check_schema(schema)
+        return validator
+    package_validator, asset_validator = [validator_from_schema(s) for s in create_schema(config)]
+
     dependency_checker = DependencyChecker(config=config)
     validated = 0
     errors = 0
@@ -546,7 +550,12 @@ def main() -> int:
                             if doc is None:  # empty yaml file or document
                                 continue
                             dependency_checker.aggregate_identifiers(doc)
-                            err = jsonschema.exceptions.best_match(validator.iter_errors(doc))
+                            if "group" in doc:
+                                err = jsonschema.exceptions.best_match(package_validator.iter_errors(doc))
+                            elif "url" in doc:
+                                err = jsonschema.exceptions.best_match(asset_validator.iter_errors(doc))
+                            else:
+                                err = ValidationError("""document does not look like a package or asset (found neither "group" nor "url")""")
                             if err is not None:
                                 msgs.append(err.message)
                     except yaml.parser.ParserError as err:
