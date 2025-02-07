@@ -183,6 +183,7 @@ class DependencyChecker:
     gh_url_pattern = re.compile(r"^https://github\.com/([^/]+)/(?:[^/]+)/releases/download/.*")
     unescaped_paren_open  = re.compile(r"(?<!\\)\((?!\?)")  # a `(` not preceded by `\` or followed by `?`
     unescaped_paren_close = re.compile(r"(?<!\\)\)(?!\?)")  # a `)` not preceded by `\` or followed by `?`
+    unescaped_dollar = re.compile(r"(?<!\\)\$(?!$|[|])")  # a `$` not preceded by `\` and not at the end and not followed by `|`
 
     def __init__(self, *, config):
         self.config = config
@@ -416,7 +417,18 @@ def create_validators(config):
                       DependencyChecker.unescaped_paren_close.search(p) and "(?" not in p]
         if bad_parens:
             msgs.append(rf"Parentheses in include/exclude patterns need to be escaped: use `\(...\)` for literals or `(?:...)` for regex-grouping in {bad_parens}. "
-                        r"If the include/exclude pattern is surrounded by double quotes in YAML, then use double-backslashes: `\\(...\\)`.")
+                        r"If the include/exclude pattern is enclosed in double quotes in YAML, then use double-backslashes: `\\(...\\)`.")
+        bad_dollars = [p for p in patterns if DependencyChecker.unescaped_dollar.search(p)]
+        if bad_dollars:
+            msgs.append(rf"Dollar signs in include/exclude patterns need to be escaped: use `\$` instead of `$` in {bad_dollars}."
+                        r" Otherwise, `$` means end-of-line."
+                        r" If the include/exclude pattern is enclosed in double quotes in YAML, use double-backslashes: `\\$`.")
+        bad_backslashes = [p for p in patterns if r"\\" in p]
+        if bad_backslashes:
+            msgs.append(f"Incorrect use of double backslashes in regex: {', '.join(bad_backslashes)}."
+                        r" Use double backslashes `\\` only within double quotes,"
+                        r" use single backslashes `\` in strings enclosed in single quotes or no quotes,"
+                        r" use forward slashes `/` as path separator between folders and files.")
         if msgs:
             yield ValidationError('\n'.join(msgs))
 
