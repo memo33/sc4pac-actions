@@ -145,6 +145,31 @@ def create_schema(config):
                 "type": "object",
                 "patternProperties": {".*": map_of_strings},
             },
+            "variantInfo": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["variantId"],
+                    "properties": {
+                        "variantId": {"type": "string"},
+                        "description": {"type": "string", "validate_text_field": "description"},
+                        "values": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": ["value"],
+                                "properties": {
+                                    "value": {"type": "string"},
+                                    "description": {"type": "string", "validate_text_field": "description"},
+                                    "default": {"type": "boolean"},
+                                },
+                            },
+                        },
+                    },
+                },
+            },
             "info": {
                 "type": "object",
                 "additionalProperties": False,
@@ -210,6 +235,10 @@ class DependencyChecker:
         self.packages_with_checksum = []  # (pkg, group, assetId)
         self.unexpected_variant_specific_dependencies = []  # (pkg, dependency)
         self.duplicate_website_fields = set()
+        self.deprecated_variant_descs = set()
+        self.invalid_variant_info_ids = []
+        self.invalid_variant_info_values = []
+        self.duplicate_default_variants = []
 
     def aggregate_identifiers(self, doc):
         if 'assetId' in doc:
@@ -306,6 +335,23 @@ class DependencyChecker:
                         self.packages_with_checksum.append((pkg, doc['group'], asset.get('assetId')))
             if is_dll and has_asset and not has_checksum:
                 self.dlls_without_checksum.add(pkg)
+
+            variant_info = doc.get('variantInfo', [])
+            if variant_info and 'variantDescriptions' in doc:
+                self.deprecated_variant_descs.add(pkg)
+            for vinfo in variant_info:
+                variant_id = vinfo.get('variantId')
+                if variant_id not in variant_keys:
+                    self.invalid_variant_info_ids.append((pkg, variant_id))
+                else:
+                    expected_variant_values = self.known_variant_values[variant_id]
+                    unexpected_variant_values = [v for vitem in vinfo.get('values', [])
+                                                 if (v := vitem.get('value')) not in expected_variant_values]
+                    if unexpected_variant_values:
+                        self.invalid_variant_info_values.append((pkg, variant_id, unexpected_variant_values))
+                num_defaults = len([v for v in vinfo.get('values', []) if v.get('default')])
+                if num_defaults > 1:
+                    self.duplicate_default_variants.append((pkg, variant_id))
 
 
     def _get_channel_contents(self, channel_url):
@@ -606,6 +652,13 @@ def main() -> int:
         basic_report(dependency_checker.assets_http_without_checksum, "The following assets use http instead of https. They should include a `checksum` field.")
         basic_report(list(dependency_checker.dlls_without_github_messages()), "DLLs should be downloaded from the author's GitHub releases to ensure authenticity.")
         basic_report(dependency_checker.duplicate_website_fields, """The following packages define both "website" and "websites" fields (use only one of them):""")
+        basic_report(dependency_checker.deprecated_variant_descs, """The following packages define both "variantDescriptions" and "variantInfo" fields (use only "variantInfo"):""")
+        basic_report(dependency_checker.invalid_variant_info_ids, "",
+                     lambda tup: """The "variantInfo" field defines a variantId "{1}" which does not exist in package "{0}".""".format(*tup))
+        basic_report(dependency_checker.invalid_variant_info_values, "",
+                     lambda tup: """The "variantInfo" field for "{1}" in package "{0}" defines unknown values: {2}.""".format(*tup))
+        basic_report(dependency_checker.duplicate_default_variants, "",
+                     lambda tup: """The "variantInfo" field for "{1}" in package "{0}" defines too many (>1) "default" values.""".format(*tup))
 
     if errors > 0:
         print(f"Finished with {errors} errors.")
