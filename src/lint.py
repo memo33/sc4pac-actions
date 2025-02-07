@@ -147,6 +147,7 @@ def create_schema(config):
             },
             "variantInfo": {
                 "type": "array",
+                "unique_by": "variantId",
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
@@ -156,6 +157,7 @@ def create_schema(config):
                         "description": {"type": "string", "validate_text_field": "description"},
                         "values": {
                             "type": "array",
+                            "unique_by": "value",
                             "items": {
                                 "type": "object",
                                 "additionalProperties": False,
@@ -518,12 +520,27 @@ def create_validators(config):
         if not (len(text) == 64 and DependencyChecker.sha256_pattern.fullmatch(text)):
             yield ValidationError(f"value is not a sha256: {text}")
 
+    def unique_by(validator, field, items, schema):
+        seen = set()
+        dupes = []
+        for item in items:
+            if field in item:
+                v = item[field]
+                if v not in seen:
+                    seen.add(v)
+                else:
+                    dupes.append(v)
+        if dupes:
+            items_abbrev = [f"{{{repr(field)}: {repr(item.get(field))},...}}" for item in items]
+            yield ValidationError(f"""Array contains ambiguous items with field {repr(field)} = {"/".join(map(repr, dupes))}:  [{", ".join(items_abbrev)}].""")
+
     return dict(
         validate_pattern=validate_pattern,
         validate_query_params=validate_query_params,
         validate_name=validate_name,
         validate_text_field=validate_text_field,
         validate_sha256=validate_sha256,
+        unique_by=unique_by,
     )
 
 
