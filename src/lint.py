@@ -56,7 +56,8 @@ def create_schema(config):
 
     map_of_strings = {
         "type": "object",
-        "patternProperties": {".*": {"type": "string"}},
+        # "patternProperties": {".*": {"type": "string"}},
+        "additionalProperties": {"type": "string"},
     }
 
     asset_schema = {
@@ -257,7 +258,7 @@ class DependencyChecker:
             if urlparse(url).scheme not in ['https', 'file'] and 'checksum' not in doc:
                 self.assets_http_without_checksum.add(asset)
         if 'group' in doc and 'name' in doc:
-            pkg = doc['group'] + ":" + doc['name']
+            pkg = f"{doc['group']}:{doc['name']}"
             if pkg not in self.known_packages:
                 self.known_packages.add(pkg)
             else:
@@ -316,7 +317,7 @@ class DependencyChecker:
                     self.unexpected_variants.append((pkg, key, sorted(variant_values), sorted(self.known_variant_values[key])))
                 else:
                     pass
-                if not self.naming_convention_variants.fullmatch(key):
+                if not self.naming_convention_variants.fullmatch(str(key)):
                     self.invalid_variant_names.add(key)
                 for value in variant_values:
                     if not self.naming_convention_variants_value.fullmatch(value):
@@ -501,7 +502,7 @@ def create_validators(config):
             yield ValidationError('\n'.join(msgs))
 
     def validate_name(validator, value, name, schema):
-        if "-vol-" in name:
+        if "-vol-" in str(name):
             yield ValidationError(f"Avoid the hyphen after 'vol' (for consistency with other packages): {name}")
 
     allow_ego_perspective = config['allow-ego-perspective']
@@ -624,7 +625,6 @@ def main() -> int:
                         for doc in yaml.safe_load_all(text):
                             if doc is None:  # empty yaml file or document
                                 continue
-                            dependency_checker.aggregate_identifiers(doc)
                             if "group" in doc:
                                 err = jsonschema.exceptions.best_match(package_validator.iter_errors(doc))
                             elif "url" in doc:
@@ -633,6 +633,8 @@ def main() -> int:
                                 err = ValidationError("""document does not look like a package or asset (found neither "group" nor "url")""")
                             if err is not None:
                                 msgs.append(err.message)
+                            else:
+                                dependency_checker.aggregate_identifiers(doc)
                     except yaml.parser.ParserError as err:
                         msgs.append(str(err))
                 if msgs:
