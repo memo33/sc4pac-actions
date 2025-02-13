@@ -9,6 +9,7 @@ import re
 from urllib.parse import (urlparse, parse_qs)
 import jsonschema
 from jsonschema import ValidationError
+import typing
 
 # add subfolders as necessary
 default_subfolders = r"""
@@ -527,10 +528,11 @@ def create_validators(config):
         for item in items:
             if field in item:
                 v = item[field]
-                if v not in seen:
-                    seen.add(v)
-                else:
-                    dupes.append(v)
+                if isinstance(v, typing.Hashable):  # else this is likely a type error that will be caught elsewhere
+                    if v not in seen:
+                        seen.add(v)
+                    else:
+                        dupes.append(v)
         if dupes:
             items_abbrev = [f"{{{repr(field)}: {repr(item.get(field))},...}}" for item in items]
             yield ValidationError(f"""Array contains ambiguous items with field {repr(field)} = {"/".join(map(repr, dupes))}:  [{", ".join(items_abbrev)}].""")
