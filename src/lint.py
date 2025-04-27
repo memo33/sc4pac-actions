@@ -129,6 +129,7 @@ def create_schema(config):
             "version": {"type": "string"},
             "subfolder": {"enum": sorted(set(default_subfolders + config['subfolders']))},
             "dependencies": unique_strings,
+            "conflicting": unique_strings,
             "assets": assets,
             "variants": {
                 "type": "array",
@@ -139,6 +140,7 @@ def create_schema(config):
                     "properties": {
                         "variant": map_of_strings,
                         "dependencies": unique_strings,
+                        "conflicting": unique_strings,
                         "assets": assets,
                     },
                 },
@@ -221,6 +223,7 @@ class DependencyChecker:
         self.referenced_packages = set()
         self.referenced_assets = set()
         self.self_dependencies = set()
+        self.bad_conflicts = set()
         self.duplicate_packages = set()
         self.duplicate_assets = set()
         self.asset_urls = {}  # asset -> url
@@ -287,6 +290,14 @@ class DependencyChecker:
                         expected_variant, expected_value = variant_specific_dependencies[dep]
                         if obj.get('variant', {}).get(expected_variant) != expected_value:
                             self.unexpected_variant_specific_dependencies.append((pkg, dep))
+
+                local_conflicts = set(obj.get('conflicting', []))
+                self.referenced_packages.update(local_conflicts)
+                if local_conflicts and (
+                        pkg in local_conflicts or
+                        any(dep in local_conflicts for dep in local_deps) or
+                        any(dep in local_conflicts for dep in doc.get('dependencies', []))):
+                    self.bad_conflicts.add(pkg)
 
                 local_assets = list(asset_ids(obj))
                 self.referenced_assets.update(local_assets)
@@ -653,6 +664,7 @@ def main() -> int:
         for label, dupes in dependency_checker.duplicates().items():
             basic_report(dupes, f"The following {label} are defined multiple times:")
         basic_report(dependency_checker.self_dependencies, "The following packages unnecessarily depend on themselves:")
+        basic_report(dependency_checker.bad_conflicts, "The following packages conflict with their dependencies or themselves, which prevents them from getting installed at all:")  # this check is not exhaustive here, but only intended to catch obvious mistakes
         basic_report(dependency_checker.unexpected_variant_specific_dependencies, "The following packages have dependencies that should only be used with specific variants:",
                      lambda tup: "{0} depends on {1}, but this dependency should only be used with variant \"{2}={3}\"".format(*(tup + variant_specific_dependencies[tup[1]])))
         basic_report(dependency_checker.assets_with_same_url(),
