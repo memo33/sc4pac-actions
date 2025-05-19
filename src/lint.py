@@ -193,11 +193,29 @@ def create_schema(config):
         },
     }
 
+    package_array_schema = {
+        "title": "PackageArray",
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["packages"],
+        "properties": {
+            "packages": {
+                "type": "array",
+                "items": package_schema,
+
+            },
+            "assets": {
+                "type": "array",
+                "items": asset_schema,
+            },
+        },
+    }
+
     # Using this combined schema would lead to unhelpful error messages in case neither schema fully matches.
     # schema = {
     #     "oneOf": [package_schema, asset_schema]
     # }
-    return package_schema, asset_schema
+    return package_schema, asset_schema, package_array_schema
 
 
 class DependencyChecker:
@@ -607,7 +625,7 @@ def main() -> int:
             )(schema)
         validator.check_schema(schema)
         return validator
-    package_validator, asset_validator = [validator_from_schema(s) for s in create_schema(config)]
+    package_validator, asset_validator, package_arr_validator = [validator_from_schema(s) for s in create_schema(config)]
 
     dependency_checker = DependencyChecker(config=config)
     validated = 0
@@ -642,10 +660,17 @@ def main() -> int:
                                 err = jsonschema.exceptions.best_match(package_validator.iter_errors(doc))
                             elif "url" in doc:
                                 err = jsonschema.exceptions.best_match(asset_validator.iter_errors(doc))
+                            elif "packages" in doc:
+                                err = jsonschema.exceptions.best_match(package_arr_validator.iter_errors(doc))
                             else:
-                                err = ValidationError("""document does not look like a package or asset (found neither "group" nor "url")""")
+                                err = ValidationError("""document does not look like a package or asset (found neither "group" nor "url" nor "packages")""")
                             if err is not None:
                                 msgs.append(err.message)
+                            elif "packages" in doc:
+                                for subDoc in doc.get("packages", []):
+                                    dependency_checker.aggregate_identifiers(subDoc)
+                                for subDoc in doc.get("assets", []):
+                                    dependency_checker.aggregate_identifiers(subDoc)
                             else:
                                 dependency_checker.aggregate_identifiers(doc)
                     except yaml.parser.ParserError as err:
