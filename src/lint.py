@@ -265,6 +265,7 @@ class DependencyChecker:
         self.overlapping_variants = set()
         self.known_variant_values = {}
         self.unexpected_variants = []
+        self.singular_variants = []
         self.invalid_asset_names = set()
         self.invalid_group_names = set()
         self.invalid_package_names = set()
@@ -371,6 +372,8 @@ class DependencyChecker:
                     self.unexpected_variants.append((pkg, key, sorted(variant_values), sorted(self.known_variant_values[key])))
                 else:
                     pass
+                if len(variant_values) == 1:
+                    self.singular_variants.append((pkg, key, variant_values))
                 if not self.naming_convention_variants.fullmatch(str(key)):
                     self.invalid_variant_names.add(key)
                 for value in variant_values:
@@ -723,6 +726,8 @@ def main() -> int:
         basic_report(dependency_checker.overlapping_variants, "The following packages have duplicate variants:")
         basic_report(dependency_checker.unexpected_variants, "",
                      lambda tup: "{0} defines unexpected {1} variants {2} (expected: {3})".format(*tup))  # pkg, key, values, expected_values
+        basic_report(dependency_checker.singular_variants, "",
+                     lambda tup: """{0} defines a "{1}" variant with only a single choice: {2}""".format(*tup))  # pkg, variantId, values
         basic_report(dependency_checker.invalid_asset_names, "the following assetIds do not match the naming convention (lowercase alphanumeric hyphenated)")
         basic_report(dependency_checker.invalid_group_names, "the following group identifiers do not match the naming convention (lowercase alphanumeric hyphenated)")
         basic_report(dependency_checker.invalid_package_names, "the following package names do not match the naming convention (lowercase alphanumeric hyphenated)")
