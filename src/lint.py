@@ -91,6 +91,24 @@ def create_schema(config):
         },
     }
 
+    include_exclude_checksum = {
+        "include": {**unique_strings, "validate_pattern": True},
+        "exclude": {**unique_strings, "validate_pattern": True},
+        "withChecksum": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["include", "sha256"],
+                "properties": {
+                    "include": {"type": "string", "validate_pattern": True},
+                    "sha256": {"type": "string", "validate_sha256": True},
+                },
+            },
+            "uniqueItems": True,
+        },
+    }
+
     assets = {
         "type": "array",
         "items": {
@@ -99,20 +117,18 @@ def create_schema(config):
             "required": ["assetId"],
             "properties": {
                 "assetId": {"type": "string"},
-                "include": {**unique_strings, "validate_pattern": True},
-                "exclude": {**unique_strings, "validate_pattern": True},
-                "withChecksum": {
+                **include_exclude_checksum,
+                "withConditions": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
-                        "required": ["include", "sha256"],
+                        "required": ["ifVariant"],
                         "properties": {
-                            "include": {"type": "string", "validate_pattern": True},
-                            "sha256": {"type": "string", "validate_sha256": True},
+                            "ifVariant": map_of_strings,
+                            **include_exclude_checksum,
                         },
                     },
-                    "uniqueItems": True,
                 },
             },
         },
@@ -338,9 +354,17 @@ class DependencyChecker:
                 # the same variant should not be defined twice
                 self.overlapping_variants.add(pkg)
 
-            variant_keys = set(key for v in variants for key, value in v.items())
+            def iterate_conditional_variants(obj):
+                for asset in obj.get('assets', []):
+                    for cond in asset.get('withConditions', []):
+                        yield cond.get('ifVariant', {})
+
+            conditional_variants = [v for obj in iterate_doc_and_variants() for v in iterate_conditional_variants(obj)]
+            all_variants = variants + conditional_variants
+
+            variant_keys = set(key for v in all_variants for key, value in v.items())
             for key in variant_keys:
-                variant_values = set(v[key] for v in variants if key in v)
+                variant_values = set(v[key] for v in all_variants if key in v)
                 if key not in self.known_variant_values:
                     self.known_variant_values[key] = variant_values
                 elif self.known_variant_values[key] != variant_values:
@@ -363,7 +387,7 @@ class DependencyChecker:
             for obj in iterate_doc_and_variants():
                 for asset in obj.get('assets', []):
                     has_asset = True
-                    if "withChecksum" in asset:
+                    if "withChecksum" in asset or any(("withChecksum" in cond) for cond in asset.get('withConditions', [])):
                         has_checksum = True
                         self.packages_with_checksum.append((pkg, doc['group'], asset.get('assetId')))
             if is_dll and has_asset and not has_checksum:
