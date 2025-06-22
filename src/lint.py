@@ -15,7 +15,10 @@ import typing
 default_subfolders = r"""
 ### [subfolders-docsify]
 050-load-first
+060-config
 100-props-textures
+110-resources
+140-ordinances
 150-mods
 170-terrain
 180-flora
