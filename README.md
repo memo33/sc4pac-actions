@@ -47,6 +47,9 @@ ignore-version-mismatches: []
 # Set this to true to allow writing descriptions from a first-person perspective.
 allow-ego-perspective: false
 
+# Set this to true to enforce lowercase file names:
+lowercase-file-names: false
+
 # For downloading DLLs from GitHub, define a mapping between groups and GH accounts.
 # group-to-github:
 # - null-45: "0xC0000054"

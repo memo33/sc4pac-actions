@@ -244,6 +244,7 @@ class DependencyChecker:
     naming_convention_variants = re.compile(  # group:package:variant (regex groups: \1:\2:\3)
             rf"(?:({naming_convention.pattern}):)?(?:({naming_convention.pattern}):)?([a-zA-Z0-9]+(?:[-\.][a-zA-Z0-9]+)*)")
     naming_convention_files = re.compile(r"[a-z0-9]+([-\./\\][a-z0-9]+)*", re.IGNORECASE)
+    naming_convention_files_lowercase = re.compile(naming_convention_files.pattern)
     version_rel_pattern = re.compile(r"(.*?)(-\d+)?")
     pronouns_pattern = re.compile(r"\b[Mm][ey]\b|(?:\bI\b(?!-|\.| [A-Z]))")
     desc_invalid_chars_pattern = re.compile(r'\\n|\\"')
@@ -629,6 +630,7 @@ def load_config(config_path):
         'allow-ego-perspective': False,
         'group-to-github': [],
         'ignore-non-github-urls': [],
+        'lowercase-file-names': False,
     }
     try:
         with open(config_path, encoding='utf-8') as f:
@@ -675,6 +677,7 @@ def main() -> int:
             for identifier in identifiers:
                 print(identifier if stringify is None else stringify(identifier))
 
+    enforce_lowercase_filenames = config['lowercase-file-names']
     for src_dir in args:
         for (parent, dirs, files) in os.walk(src_dir):
             for fname in files:
@@ -682,8 +685,11 @@ def main() -> int:
                     continue
                 msgs = []
                 p = os.path.join(parent, fname)
-                if not DependencyChecker.naming_convention_files.fullmatch(os.path.relpath(p, start=src_dir)):
-                    msgs.append("File name should not contain spaces or other special characters.")
+                if not (DependencyChecker.naming_convention_files_lowercase if
+                        enforce_lowercase_filenames else
+                        DependencyChecker.naming_convention_files
+                        ).fullmatch(os.path.relpath(p, start=src_dir)):
+                    msgs.append(f"""File name should not contain spaces{", uppercase letters" if enforce_lowercase_filenames else ""} or other special characters.""")
                 with open(p, encoding='utf-8') as f:
                     validated += 1
                     text = f.read()
