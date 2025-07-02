@@ -252,6 +252,7 @@ class DependencyChecker:
     unescaped_paren_open  = re.compile(r"(?<!\\)\((?!\?)")  # a `(` not preceded by `\` or followed by `?`
     unescaped_paren_close = re.compile(r"(?<!\\)\)(?!\?)")  # a `)` not preceded by `\` or followed by `?`
     unescaped_dollar = re.compile(r"(?<!\\)\$(?!$|[|])")  # a `$` not preceded by `\` and not at the end and not followed by `|`
+    superseded_pattern = re.compile(r"superseded.*pkg", re.IGNORECASE)
 
     def __init__(self, *, config):
         self.config = config
@@ -284,6 +285,7 @@ class DependencyChecker:
         self.invalid_variant_info_ids = []
         self.invalid_variant_info_values = []
         self.duplicate_default_variants = []
+        self.superseded_with_assets = set()
 
     def aggregate_identifiers(self, doc):
         if 'assetId' in doc:
@@ -387,7 +389,8 @@ class DependencyChecker:
             if 'website' in info and 'websites' in info:
                 self.duplicate_website_fields.add(pkg)
 
-            is_dll = ("DLL" in info.get('summary', "")) or ("dll" in doc['name'].split('-'))
+            summary = info.get('summary', "")
+            is_dll = ("DLL" in summary) or ("dll" in doc['name'].split('-'))
             has_asset = False
             has_checksum = False
             for obj in iterate_doc_and_variants():
@@ -398,6 +401,9 @@ class DependencyChecker:
                         self.packages_with_checksum.append((pkg, doc['group'], asset.get('assetId')))
             if is_dll and has_asset and not has_checksum:
                 self.dlls_without_checksum.add(pkg)
+            is_superseded = bool(self.superseded_pattern.search(summary))
+            if is_superseded and has_asset and any(dep in summary for dep in doc.get('dependencies', [])):
+                self.superseded_with_assets.add(pkg)
 
             variant_info = doc.get('variantInfo', [])
             if variant_info and 'variantDescriptions' in doc:
@@ -749,6 +755,7 @@ def main() -> int:
                      lambda tup: """The "variantInfo" field for "{1}" in package "{0}" defines unknown values: {2}.""".format(*tup))
         basic_report(dependency_checker.duplicate_default_variants, "",
                      lambda tup: """The "variantInfo" field for "{1}" in package "{0}" defines too many (>1) "default" values.""".format(*tup))
+        basic_report(dependency_checker.superseded_with_assets, "The following packages are superseded, so they usually should not reference an asset, but should only refer to the new dependency instead.")
 
     if errors > 0:
         print(f"Finished with {errors} errors.")
