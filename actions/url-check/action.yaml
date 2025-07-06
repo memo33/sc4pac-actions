@@ -15,6 +15,11 @@ outputs: {}
 runs:
   using: composite
   steps:
+    - name: Checkout and identify changes
+      uses: memo33/sc4pac-actions/actions/checkout-and-identify-changes@main
+      with:
+        path: ${{ inputs.path }}
+        destination: dest
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -22,49 +27,13 @@ runs:
     - name: Install dependencies
       shell: bash
       run: python -m pip install --upgrade PyYAML jsonschema python-dateutil
-    - uses: actions/checkout@v4
-      with:
-        # to allow diff of other commit
-        fetch-depth: 0
-        persist-credentials: false
-        sparse-checkout: |
-          ${{ inputs.path }}
-    - name: Checkout pull request
-      if: ${{ github.event_name == 'pull_request_target' }}
-      uses: actions/checkout@v4
-      with:
-        persist-credentials: false
-        # For pull_request_target:
-        # As merge_commit_sha is not up-to-date due to mergeability check, we use actual PR head for now; see https://github.com/actions/checkout/issues/518#issuecomment-1757453837
-        # (This merge might correspond to a newer commit than the one that triggered this workflow, in case the PR was updated in the meantime -> ok)
-        ref: ${{ format('refs/pull/{0}/merge', github.event.pull_request.number) }}
-        path: tmp
-        sparse-checkout: |
-          ${{ inputs.path }}
-    - name: Check STEX URLs (pull_request_target)
-      if: ${{ github.event_name == 'pull_request_target' }}
+    - name: Check STEX URLs
       shell: bash
       env:
         STEX_API_KEY: ${{ inputs.stex-api-key }}
-        SRC_YAML: ${{ inputs.path }}
-      # We checked out PR into `tmp` and run script from action repository.
       run: |
         : Check STEX URLs
         echo $(printf '%.s─' $(seq 1 80))  # horizontal line
-        cd tmp
-        (git diff --no-index --diff-filter=d --name-only "../$SRC_YAML" "$SRC_YAML" || true) \
-          | xargs --delimiter '\n' python "$GITHUB_ACTION_PATH/../../src/st-check-updates.py" --mode=id
-    - name: Check STEX URLs (push)
-      if: ${{ github.event_name != 'pull_request_target' }}
-      shell: bash
-      env:
-        STEX_API_KEY: ${{ inputs.stex-api-key }}
-        SRC_YAML: ${{ inputs.path }}
-        PREVIOUS_COMMIT: ${{ github.event.before }}
-      # We are on an actual branch of the repository, so run script here in the repository.
-      # TODO This is not perfect yet, as `before` does not exist on new branches or forced pushes.
-      run: |
-        : Check STEX URLs
-        echo $(printf '%.s─' $(seq 1 80))  # horizontal line
-        git diff --diff-filter=d --name-only "$PREVIOUS_COMMIT" -- "$SRC_YAML" \
+        cd "dest"
+        cat "$GITHUB_WORKSPACE/modified-yaml-files.txt" \
           | xargs --delimiter '\n' python "$GITHUB_ACTION_PATH/../../src/st-check-updates.py" --mode=id

@@ -1,0 +1,60 @@
+name: checkout-and-identify-changes
+description: >-
+  Compares two commits to find modified yaml files.
+  The resulting list of modified/added files is written to `modified-yaml-files.txt`.
+
+inputs:
+  path:
+    description: Source folder containing yaml files to analyze
+    required: true
+  destination:
+    description: Relative destination folder to which the files of the newer commit are checked out.
+    required: true
+outputs: {}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        # to allow diff of other commit
+        fetch-depth: 0
+        persist-credentials: false
+        path: ${{ github.event_name != 'pull_request_target' && format('{0}', inputs.destination) || 'tmp_old-tree' }}
+        sparse-checkout: |
+          ${{ inputs.path }}
+    - name: Checkout pull request
+      if: ${{ github.event_name == 'pull_request_target' }}
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+        # For pull_request_target:
+        # As merge_commit_sha is not up-to-date due to mergeability check, we use actual PR head for now; see https://github.com/actions/checkout/issues/518#issuecomment-1757453837
+        # (This merge might correspond to a newer commit than the one that triggered this workflow, in case the PR was updated in the meantime -> ok)
+        ref: ${{ format('refs/pull/{0}/merge', github.event.pull_request.number) }}
+        path: ${{ inputs.destination }}
+        sparse-checkout: |
+          ${{ inputs.path }}
+    - name: Identify modified YAML files (pull_request_target)
+      if: ${{ github.event_name == 'pull_request_target' }}
+      shell: bash
+      env:
+        SRC_YAML: ${{ inputs.path }}
+        DEST: ${{ inputs.destination }}
+      # We checked out PR into `DEST` and main base commit into `tmp_old-tree`.
+      run: |
+        : Identify modified YAML files
+        cd "$DEST"
+        (git diff --no-index --diff-filter=d --name-only "$GITHUB_WORKSPACE/tmp_old-tree/$SRC_YAML" "$SRC_YAML" || true) > "$GITHUB_WORKSPACE/modified-yaml-files.txt"
+    - name: Identify modified YAML files (push)
+      if: ${{ github.event_name != 'pull_request_target' }}
+      shell: bash
+      env:
+        SRC_YAML: ${{ inputs.path }}
+        PREVIOUS_COMMIT: ${{ github.event.before }}
+        DEST: ${{ inputs.destination }}
+      # TODO This is not perfect yet, as `before` does not exist on new branches or forced pushes.
+      run: |
+        : Identify modified YAML files
+        cd "$DEST"
+        git diff --diff-filter=d --name-only "$PREVIOUS_COMMIT" -- "$SRC_YAML" > "$GITHUB_WORKSPACE/modified-yaml-files.txt"
