@@ -52,7 +52,7 @@ runs:
         : Check STEX URLs
         echo $(printf '%.s─' $(seq 1 80))  # horizontal line
         cd tmp
-        (git diff --no-index --name-only "../$SRC_YAML" "$SRC_YAML" || true) \
+        (git diff --no-index --diff-filter=d --name-only "../$SRC_YAML" "$SRC_YAML" || true) \
           | xargs --delimiter '\n' python "$GITHUB_ACTION_PATH/../../src/st-check-updates.py" --mode=id
     - name: Check STEX URLs (push)
       if: ${{ github.event_name != 'pull_request_target' }}
@@ -66,5 +66,5 @@ runs:
       run: |
         : Check STEX URLs
         echo $(printf '%.s─' $(seq 1 80))  # horizontal line
-        git diff --name-only "$PREVIOUS_COMMIT" -- "$SRC_YAML" \
+        git diff --diff-filter=d --name-only "$PREVIOUS_COMMIT" -- "$SRC_YAML" \
           | xargs --delimiter '\n' python "$GITHUB_ACTION_PATH/../../src/st-check-updates.py" --mode=id
