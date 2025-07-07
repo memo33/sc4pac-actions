@@ -25,14 +25,14 @@ runs:
   steps:
     - name: Checkout and identify changes
       # creates "modified-yaml-files.txt"
-      uses: memo33/sc4pac-actions/actions/checkout-and-identify-changes@main
+      uses: memo33/sc4pac-actions/actions/checkout-and-identify-changes@unstable
       with:
         path: ${{ inputs.path }}
         destination: repo_src
 
     - name: Build channel
       # creates "tmp_build/channel/"
-      uses: memo33/sc4pac-actions/actions/build@main
+      uses: memo33/sc4pac-actions/actions/build@unstable
       with:
         path: ${{ format('repo_src/{0}', inputs.path) }}
         pages-output-path: 'tmp_build'

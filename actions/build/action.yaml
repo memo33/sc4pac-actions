@@ -39,7 +39,7 @@ runs:
       cache: 'sbt'
 
   - name: Install sc4pac
-    uses: memo33/sc4pac-actions/actions/setup@main
+    uses: memo33/sc4pac-actions/actions/setup@unstable
 
   - name: Build channel
     shell: bash

@@ -62,7 +62,7 @@ jobs:
         sparse-checkout: |
           ${{ inputs.path }}
     - name: Install sc4pac-lint
-      uses: memo33/sc4pac-actions/actions/setup-lint@main
+      uses: memo33/sc4pac-actions/actions/setup-lint@unstable
     - name: Lint
       # TODO
       run: |
@@ -77,7 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Run url-check
-      uses: memo33/sc4pac-actions/actions/url-check@main
+      uses: memo33/sc4pac-actions/actions/url-check@unstable
       with:
         path: ${{ inputs.path }}
         stex-api-key: ${{ secrets.stex-api-key }}
@@ -88,7 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Test installing modified packages
-      uses: memo33/sc4pac-actions/actions/test-install@main
+      uses: memo33/sc4pac-actions/actions/test-install@unstable
       with:
         path: ${{ inputs.path }}
         sc4pac-simtropolis-token: ${{ secrets.sc4pac-simtropolis-token }}
@@ -112,7 +112,7 @@ jobs:
         persist-credentials: false
         submodules: recursive
     - name: Build channel and website
-      uses: memo33/sc4pac-actions/actions/build@main
+      uses: memo33/sc4pac-actions/actions/build@unstable
       with:
         path: ${{ inputs.path }}
         pages-output-path: 'tmp_gh-pages'
