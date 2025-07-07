@@ -84,6 +84,8 @@ runs:
       env:
         SC4PAC_SIMTROPOLIS_TOKEN: ${{ inputs.sc4pac-simtropolis-token }}
         MAX_PKGS: ${{ inputs.max-packages }}
+        # enforce ANSI colors with GH actions:
+        SC4PAC_JAVA_OPTIONS: '-Djansi.mode=force'
       run: |
         : Test installing modified packages
         if [[ $(wc -l < "$GITHUB_WORKSPACE/modified-packages.txt") -gt "$MAX_PKGS" ]]; then echo "Too many packages." ; false; fi
