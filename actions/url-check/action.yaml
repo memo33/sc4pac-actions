@@ -16,7 +16,7 @@ runs:
   using: composite
   steps:
     - name: Checkout and identify changes
-      uses: memo33/sc4pac-actions/actions/checkout-and-identify-changes@main
+      uses: memo33/sc4pac-actions/actions/checkout-and-identify-changes@unstable
       with:
         path: ${{ inputs.path }}
         destination: dest

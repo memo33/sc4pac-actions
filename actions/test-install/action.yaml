@@ -25,7 +25,7 @@ runs:
   steps:
     - name: Checkout and identify changes
       # creates "modified-yaml-files.txt"
-      uses: memo33/sc4pac-actions/actions/checkout-and-identify-changes@main
+      uses: memo33/sc4pac-actions/actions/checkout-and-identify-changes@unstable
       with:
         path: ${{ inputs.path }}
         destination: repo_src
