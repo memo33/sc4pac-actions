@@ -24,8 +24,10 @@ jobs:
       channel-label: Owner           # your name or other suitable label
       deploy-repository: OWNER/REPO  # your GitHub repository
       use-stex-api: false            # optionally enable the STEX API calls if you have a private key
+      skip-test: true                # optionally skip the `test` step
     #secrets:
     #  stex-api-key: ${{ secrets.STEX_API_KEY }}  # set the STEX_API_KEY under: Settings > Secrets and variables > Actions > Repository secrets
+    #  sc4pac-simtropolis-token: ${{ secrets.SC4PAC_SIMTROPOLIS_TOKEN }}  # set the SC4PAC_SIMTROPOLIS_TOKEN for downloading files during `test`
     permissions:
       pages: write                   # to deploy to GitHub Pages
       id-token: write                # to verify the deployment originates from an appropriate source

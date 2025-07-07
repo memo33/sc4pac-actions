@@ -1,0 +1,99 @@
+name: test-install
+description: >-
+  Compares two commits to find modified yaml files.
+  Then attempts to install the packages from those yaml files using `sc4pac test`.
+
+inputs:
+  path:
+    description: Source folder containing yaml files to analyze
+    required: true
+  sc4pac-simtropolis-token:
+    description: Secret token for downloading STEX files.
+    required: false
+  max-packages:
+    description: Maximum number of packages to attempt to download and install.
+    required: false
+    default: '200'
+  sc4pac-cache:
+    description: Alternative absolute location of the sc4pac cache to re-use an existing cache.
+    required: false
+    default: 'tmp_build/cache'
+outputs: {}
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout and identify changes
+      # creates "modified-yaml-files.txt"
+      uses: memo33/sc4pac-actions/actions/checkout-and-identify-changes@main
+      with:
+        path: ${{ inputs.path }}
+        destination: repo_src
+
+    - name: Build channel
+      # creates "tmp_build/channel/"
+      uses: memo33/sc4pac-actions/actions/build@main
+      with:
+        path: ${{ format('repo_src/{0}', inputs.path) }}
+        pages-output-path: 'tmp_build'
+        channel-label: 'test-channel'
+        metadata-source-url: ${{ format('https://github.com/{0}/blob/{1}/{2}/', github.repository, github.event.repository.default_branch, inputs.path) }}
+
+    - name: Initialize sc4pac to use local channel
+      # creates "sc4pac-plugins.json"
+      shell: bash
+      env:
+        CACHE_ROOT: ${{ inputs.sc4pac-cache }}
+      run: |
+        : Initialize sc4pac to use local channel
+        cat >sc4pac-plugins.json <<EOL
+        {
+          "config": {
+            "pluginsRoot": "tmp_build/plugins",
+            "cacheRoot": "${CACHE_ROOT}",
+            "tempRoot": "tmp_build/temp",
+            "variant": {},
+            "channels": [
+              "file://${GITHUB_WORKSPACE}/tmp_build/channel/"
+            ]
+          },
+          "explicit": []
+        }
+        EOL
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    - name: Install dependencies
+      shell: bash
+      run: python -m pip install --upgrade PyYAML jsonschema python-dateutil
+    - name: Identify modified packages
+      # creates "modified-packages.txt"
+      shell: bash
+      run: |
+        : Identify modified packages
+        cd "repo_src"
+        cat "$GITHUB_WORKSPACE/modified-yaml-files.txt" \
+          | xargs --delimiter '\n' python "$GITHUB_ACTION_PATH/../../src/list-packages.py" > "$GITHUB_WORKSPACE/modified-packages.txt"
+        cat "$GITHUB_WORKSPACE/modified-packages.txt"
+        echo "Found $(wc -l < "$GITHUB_WORKSPACE/modified-packages.txt") modified packages."
+
+    - name: Test installing modified packages
+      shell: bash
+      env:
+        SC4PAC_SIMTROPOLIS_TOKEN: ${{ inputs.sc4pac-simtropolis-token }}
+        MAX_PKGS: ${{ inputs.max-packages }}
+      run: |
+        : Test installing modified packages
+        if [[ $(wc -l < "$GITHUB_WORKSPACE/modified-packages.txt") -gt "$MAX_PKGS" ]]; then echo "Too many packages." ; false; fi
+        if [[ $(wc -l < "$GITHUB_WORKSPACE/modified-packages.txt") -eq 0 ]]; then echo "Found no packages to test." ; false; fi
+
+        cat "$GITHUB_WORKSPACE/modified-packages.txt" \
+          | xargs --delimiter '\n' sc4pac test --yes --output "tmp_build/plugins"
+
+    - name: List installed files
+      shell: bash
+      run: |
+        : List installed files
+        tree -C "tmp_build/plugins"

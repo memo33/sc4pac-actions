@@ -58,3 +58,9 @@ runs:
         : Identify modified YAML files
         cd "$DEST"
         git diff --diff-filter=d --name-only "$PREVIOUS_COMMIT" -- "$SRC_YAML" > "$GITHUB_WORKSPACE/modified-yaml-files.txt"
+    - name: List modified YAML files
+      shell: bash
+      run: |
+        : List modified YAML files
+        cat "$GITHUB_WORKSPACE/modified-yaml-files.txt"
+        echo "Found $(wc -l < "$GITHUB_WORKSPACE/modified-yaml-files.txt") modified YAML files."

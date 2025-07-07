@@ -30,9 +30,17 @@ on:
         required: false
         type: boolean
         default: false
+      skip-test:
+        description: Optionally skip the test job.
+        required: false
+        type: boolean
+        default: false
     secrets:
       stex-api-key:
         description: A private key for accessing the STEX API.
+        required: false
+      sc4pac-simtropolis-token:
+        description: A private token for downloading STEX files.
         required: false
 
 jobs:
@@ -65,6 +73,17 @@ jobs:
       with:
         path: ${{ inputs.path }}
         stex-api-key: ${{ secrets.stex-api-key }}
+
+  test:
+    needs: [ lint, url-check ]
+    if: ${{ github.event_name == 'pull_request_target' && inputs.skip-test == false }}
+    runs-on: ubuntu-latest
+    steps:
+    - name: Test installing modified packages
+      uses: memo33/sc4pac-actions/actions/test-install@main
+      with:
+        path: ${{ inputs.path }}
+        sc4pac-simtropolis-token: ${{ secrets.sc4pac-simtropolis-token }}
 
   deploy:
     needs: lint  # url-check is not needed as ST is flaky
