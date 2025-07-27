@@ -246,7 +246,7 @@ class DependencyChecker:
     naming_convention_files = re.compile(r"[a-z0-9]+([-\./\\][a-z0-9]+)*", re.IGNORECASE)
     naming_convention_files_lowercase = re.compile(naming_convention_files.pattern)
     version_rel_pattern = re.compile(r"(.*?)(-\d+)?")
-    pronouns_pattern = re.compile(r"\b[Mm][ey]\b|(?:\bI\b(?!-|\.| [A-Z]))")
+    pronouns_pattern = re.compile(r"(?:\b[Mm][ey]\b(?!-))|(?:\bI\b(?!-|\.| [A-Z]))")
     desc_invalid_chars_pattern = re.compile(r'\\n|\\"')
     sha256_pattern = re.compile(r"[a-f0-9]*", re.IGNORECASE)
     gh_url_pattern = re.compile(r"^https://github\.com/([^/]+)/(?:[^/]+)/releases/download/.*")
