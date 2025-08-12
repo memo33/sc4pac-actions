@@ -35,6 +35,11 @@ on:
         required: false
         type: boolean
         default: false
+      test-only-PRs:
+        description: Do not run the test job on ordinary branch updates, but only on PRs. Only enable this if you do sufficient testing locally.
+        required: false
+        type: boolean
+        default: false
     secrets:
       stex-api-key:
         description: A private key for accessing the STEX API.
@@ -76,7 +81,7 @@ jobs:
 
   test:
     needs: [ lint, url-check ]
-    if: ${{ github.event_name == 'pull_request_target' && inputs.skip-test == false }}
+    if: ${{ inputs.skip-test == false && (github.event_name == 'pull_request_target' || inputs.test-only-PRs == false) }}
     runs-on: ubuntu-latest
     steps:
     - name: Test installing modified packages
