@@ -80,7 +80,7 @@ jobs:
         stex-api-key: ${{ secrets.stex-api-key }}
 
   test:
-    needs: [ lint, url-check ]
+    needs: [ lint ]
     if: ${{ inputs.skip-test == false && (github.event_name == 'pull_request_target' || inputs.test-only-PRs == false) }}
     runs-on: ubuntu-latest
     steps:
