@@ -50,6 +50,8 @@ variant_specific_dependencies = {
     "cam:colossus-addon-mod": ("CAM", "yes"),
 }
 
+default_global_variants = ["nightmode", "driveside", "roadstyle", "CAM"]  # extensible by `global-variants` lint-config
+
 
 def create_schema(config):
     unique_strings = {
@@ -287,6 +289,8 @@ class DependencyChecker:
         self.invalid_variant_info_values = []
         self.duplicate_default_variants = []
         self.superseded_with_assets = set()
+        self.valid_global_variants = set(default_global_variants + config['global-variants'])
+        self.unknown_global_variants = {}  # variantId -> pkg
 
     def aggregate_identifiers(self, doc):
         if 'assetId' in doc:
@@ -385,6 +389,8 @@ class DependencyChecker:
                 for value in variant_values:
                     if not self.naming_convention_variants_value.fullmatch(value):
                         self.invalid_variant_names.add(value)
+                if ":" not in key and key not in self.valid_global_variants:
+                    self.unknown_global_variants[key] = pkg
 
             info = doc.get('info', {})
             if 'website' in info and 'websites' in info:
@@ -631,6 +637,7 @@ def load_config(config_path):
         'group-to-github': [],
         'ignore-non-github-urls': [],
         'lowercase-file-names': False,
+        'global-variants': [],
     }
     try:
         with open(config_path, encoding='utf-8') as f:
@@ -762,6 +769,8 @@ def main() -> int:
         basic_report(dependency_checker.duplicate_default_variants, "",
                      lambda tup: """The "variantInfo" field for "{1}" in package "{0}" defines too many (>1) "default" values.""".format(*tup))
         basic_report(dependency_checker.superseded_with_assets, "The following packages are superseded, so they usually should not reference an asset, but should only refer to the new dependency instead.")
+        basic_report(dependency_checker.unknown_global_variants.items(), "",
+                     lambda tup: f"""Variant IDs should use the package namespace by prefixing them with the package identifier, so replace "{tup[0]}" by "{tup[1]}:{str(tup[0]).lower()}" for example.""")
 
     if errors > 0:
         print(f"Finished with {errors} errors.")
