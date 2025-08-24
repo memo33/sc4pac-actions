@@ -56,4 +56,7 @@ lowercase-file-names: false
 # group-to-github:
 # - null-45: "0xC0000054"
 # - simmaster07: nsgomez
+
+# Additional global variant IDs that are not used by the Main channel
+global-variants: []
 ```
