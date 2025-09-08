@@ -272,6 +272,7 @@ class DependencyChecker:
         self.overlapping_variants = set()
         self.known_variant_values = {}
         self.unexpected_variants = []
+        self.valid_singular_variants = set(config['single-choice-variants'])
         self.singular_variants = []
         self.invalid_asset_names = set()
         self.invalid_group_names = set()
@@ -382,7 +383,7 @@ class DependencyChecker:
                     self.unexpected_variants.append((pkg, key, sorted(variant_values), sorted(self.known_variant_values[key])))
                 else:
                     pass
-                if len(variant_values) == 1:
+                if len(variant_values) == 1 and key not in self.valid_singular_variants:
                     self.singular_variants.append((pkg, key, variant_values))
                 if not self.naming_convention_variants.fullmatch(str(key)):
                     self.invalid_variant_names.add(key)
@@ -638,6 +639,7 @@ def load_config(config_path):
         'ignore-non-github-urls': [],
         'lowercase-file-names': False,
         'global-variants': [],
+        'single-choice-variants': [],
     }
     try:
         with open(config_path, encoding='utf-8') as f:

@@ -59,4 +59,7 @@ lowercase-file-names: false
 
 # Additional global variant IDs that are not used by the Main channel
 global-variants: []
+
+# Variant IDs which intentionally have just a single choice
+single-choice-variants: []
 ```
