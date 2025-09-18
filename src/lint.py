@@ -629,6 +629,41 @@ def show_usage():
     return 1
 
 
+# Raise an error if a YAML file has duplicate keys, instead of silently ignoring it.
+# See https://gist.github.com/pypt/94d747fe5180851196eb?permalink_comment_id=4653474#gistcomment-4653474
+class UniqueKeyLoader(yaml.SafeLoader):
+    def construct_mapping(self, node, deep=False):
+        mapping = set()
+        for key_node, value_node in node.value:
+            if ':merge' in key_node.tag:
+                continue
+            key = self.construct_object(key_node, deep=deep)
+            if key in mapping:
+                raise yaml.constructor.ConstructorError(f"Duplicate {key!r} key found in YAML")
+            mapping.add(key)
+        return super().construct_mapping(node, deep)
+# # test cases
+# import yaml
+# yaml_data = r"""
+# dependencies: []
+# dependencies: []
+# """
+# yaml.load(yaml_data, Loader=UniqueKeyLoader)  # raises error
+#
+# yaml_data = r"""
+# data:
+#     1:
+#         <<: &common
+#             a: a
+#             b: b
+#         a: override
+#     2:
+#         <<: *common
+#         b: override
+# """
+# yaml.load(yaml_data, Loader=UniqueKeyLoader) == {'data': {1: {'a': 'override', 'b': 'b'}, 2: {'a': 'a', 'b': 'override'}}}
+
+
 def load_config(config_path):
     default_config = {
         'extra-channels': [],
@@ -643,11 +678,13 @@ def load_config(config_path):
     }
     try:
         with open(config_path, encoding='utf-8') as f:
-            config = yaml.safe_load(f)
+            config = yaml.load(f, Loader=UniqueKeyLoader)  # yaml.safe_load(f)
             return {**default_config, **config}
     except FileNotFoundError:
         print(f"Configuration file {config_path} not found, so using default configuration.")
         return default_config
+    except (yaml.parser.ParserError, yaml.constructor.ConstructorError) as err:
+        raise ValueError(f"YAML error in {config_path}: {err}")
 
 
 def main() -> int:
@@ -704,7 +741,7 @@ def main() -> int:
                     text = f.read()
                     try:
                         validate_document_separators(text)
-                        for doc in yaml.safe_load_all(text):
+                        for doc in yaml.load_all(text, Loader=UniqueKeyLoader):  # yaml.safe_load_all(text):
                             if doc is None:  # empty yaml file or document
                                 continue
                             if "group" in doc:
@@ -724,7 +761,7 @@ def main() -> int:
                                     dependency_checker.aggregate_identifiers(subDoc)
                             else:
                                 dependency_checker.aggregate_identifiers(doc)
-                    except yaml.parser.ParserError as err:
+                    except (yaml.parser.ParserError, yaml.constructor.ConstructorError) as err:
                         msgs.append(str(err))
                 if msgs:
                     errors += len(msgs)
