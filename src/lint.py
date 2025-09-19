@@ -201,7 +201,7 @@ def create_schema(config):
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
-                    "summary": {"type": "string"},
+                    "summary": {"type": "string", "validate_text_field": "summary"},
                     "warning": {"type": "string", "validate_text_field": "warning"},
                     "conflicts": {"type": "string", "validate_text_field": "conflicts"},
                     "description": {"type": "string", "validate_text_field": "description"},
@@ -256,6 +256,7 @@ class DependencyChecker:
     unescaped_paren_close = re.compile(r"(?<!\\)\)(?!\?)")  # a `)` not preceded by `\` or followed by `?`
     unescaped_dollar = re.compile(r"(?<!\\)\$(?!$|[|])")  # a `$` not preceded by `\` and not at the end and not followed by `|`
     superseded_pattern = re.compile(r"superseded.*pkg", re.IGNORECASE)
+    md_pkg_link_pattern = re.compile(r"`pkg\b[^`]+`", re.IGNORECASE)
 
     def __init__(self, *, config):
         self.config = config
@@ -527,7 +528,7 @@ def validate_document_separators(text) -> None:
                 "YAML file contains multiple package and asset definitions. They all need to be separated by `---`.")
 
 
-def create_validators(config):
+def create_validators(config, dependency_checker):
 
     def validate_pattern(validator, value, instance, schema):
         patterns = [instance] if isinstance(instance, str) else instance
@@ -584,10 +585,16 @@ def create_validators(config):
         msgs = []
         if text is not None and text.strip().lower() == "none":
             msgs.append(f"""Text "{field}" should not be "{text.strip()}", but should be omitted instead.""")
-        if text is not None and not allow_ego_perspective and DependencyChecker.pronouns_pattern.search(text):
+        if text is not None and not allow_ego_perspective and field != "summary" and DependencyChecker.pronouns_pattern.search(text):
             msgs.append(f"""The "{field}" should be written in a neutral perspective (avoid the words 'I', 'me', 'my').""")
         if text is not None and DependencyChecker.desc_invalid_chars_pattern.search(text):
-            msgs.append("""The "{field}" seems to be malformed (avoid the characters '\\n', '\\"').""")
+            msgs.append(f"""The "{field}" seems to be malformed (avoid the characters '\\n', '\\"').""")
+        if text is not None:
+            for md_pkg_link in DependencyChecker.md_pkg_link_pattern.findall(text):
+                if not md_pkg_link.startswith("`pkg="):
+                    msgs.append(f"""The "{field}" contains a package hyperlink with incorrect syntax: {md_pkg_link} (use format `pkg=group:name` instead).""")
+                else:
+                    dependency_checker.referenced_packages.add(md_pkg_link[5:-1])
         if msgs:
             yield ValidationError('\n'.join(msgs))
 
@@ -701,19 +708,18 @@ def main() -> int:
             continue
         break
     config = load_config(config_path)
+    dependency_checker = DependencyChecker(config=config)
+    validated = 0
+    errors = 0
 
     def validator_from_schema(schema):
         validator = jsonschema.validators.extend(
                 jsonschema.validators.Draft202012Validator,
-                validators=create_validators(config),
+                validators=create_validators(config, dependency_checker),
             )(schema)
         validator.check_schema(schema)
         return validator
     package_validator, asset_validator, package_arr_validator = [validator_from_schema(s) for s in create_schema(config)]
-
-    dependency_checker = DependencyChecker(config=config)
-    validated = 0
-    errors = 0
 
     def basic_report(identifiers, msg: str, stringify=None):
         if identifiers:
