@@ -279,6 +279,9 @@ class DependencyChecker:
         self.invalid_group_names = set()
         self.invalid_package_names = set()
         self.invalid_variant_names = set()
+        self.ignore_all_group_prefixes_in_names = config['ignore-group-prefixes-in-name'] == True
+        self.allowed_group_prefixes_in_names = set() if type(config['ignore-group-prefixes-in-name']) is bool else set(config['ignore-group-prefixes-in-name'])
+        self.invalid_group_prefixes_in_names = set()
         self.packages_with_single_assets = {}  # pkg -> (version, set of assets from variants)
         self.packages_using_asset = {}  # asset -> set of packages
         self.dlls_without_checksum = set()
@@ -318,6 +321,8 @@ class DependencyChecker:
                 self.invalid_group_names.add(doc['group'])
             if not self.naming_convention.fullmatch(doc['name']):
                 self.invalid_package_names.add(doc['name'])
+            if not self.ignore_all_group_prefixes_in_names and pkg not in self.allowed_group_prefixes_in_names and doc['name'].startswith(f"{doc['group']}-"):
+                self.invalid_group_prefixes_in_names.add(pkg)
 
             def asset_ids(obj):
                 return (a['assetId'] for a in obj.get('assets', []) if 'assetId' in a)
@@ -682,6 +687,7 @@ def load_config(config_path):
         'lowercase-file-names': False,
         'global-variants': [],
         'single-choice-variants': [],
+        'ignore-group-prefixes-in-name': True,
     }
     try:
         with open(config_path, encoding='utf-8') as f:
@@ -799,6 +805,7 @@ def main() -> int:
         basic_report(dependency_checker.invalid_group_names, "the following group identifiers do not match the naming convention (lowercase alphanumeric hyphenated)")
         basic_report(dependency_checker.invalid_package_names, "the following package names do not match the naming convention (lowercase alphanumeric hyphenated)")
         basic_report(dependency_checker.invalid_variant_names, "the following variant labels or values do not match the naming convention (alphanumeric hyphenated or dots)")
+        basic_report(dependency_checker.invalid_group_prefixes_in_names, "The following package identifiers are of the form `group:group-name`. Prefer `group:name` instead. (Or edit `lint-config.yaml` to disable the check for specific packages.)")
         basic_report(list(dependency_checker.package_asset_version_mismatches()),
                      "The versions of the following packages do not match the version of the referenced assets (usually they should agree, but if the version mismatch is intentional, the packages can be added to the 'ignore-version-mismatches' list in lint-config.yaml):",
                      lambda tup: """{0} "{1}" (expected version "{3}" of asset {2})""".format(*tup))  # pkg, v1, asset, v2

@@ -62,4 +62,9 @@ global-variants: []
 
 # Variant IDs which intentionally have just a single choice
 single-choice-variants: []
+
+# Set this to false to guard against package identifiers of the form `group:group-name`, but prefer `group:name` instead.
+ignore-group-prefixes-in-name: true
+# Or add an explicit list of packages for which the check is skipped. This implies false for all other packages.
+# ignore-group-prefixes-in-name: []
 ```
