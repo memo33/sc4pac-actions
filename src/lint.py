@@ -279,6 +279,7 @@ class DependencyChecker:
         self.invalid_group_names = set()
         self.invalid_package_names = set()
         self.invalid_variant_names = set()
+        self.verbose_variant_names = []  # (variantId, value)
         self.ignore_all_group_prefixes_in_names = config['ignore-group-prefixes-in-name'] == True
         self.allowed_group_prefixes_in_names = set() if type(config['ignore-group-prefixes-in-name']) is bool else set(config['ignore-group-prefixes-in-name'])
         self.invalid_group_prefixes_in_names = set()
@@ -393,9 +394,13 @@ class DependencyChecker:
                     self.singular_variants.append((pkg, key, variant_values))
                 if not self.naming_convention_variants.fullmatch(str(key)):
                     self.invalid_variant_names.add(key)
+                key0 = key.split(":")[-1]
+                key0_pattern = re.compile(rf"\b{re.escape(key0)}\b")
                 for value in variant_values:
                     if not self.naming_convention_variants_value.fullmatch(value):
                         self.invalid_variant_names.add(value)
+                    if key0_pattern.search(value):
+                        self.verbose_variant_names.append((key0, value))
                 if ":" not in key and key not in self.valid_global_variants:
                     self.unknown_global_variants[key] = pkg
 
@@ -805,6 +810,8 @@ def main() -> int:
         basic_report(dependency_checker.invalid_group_names, "the following group identifiers do not match the naming convention (lowercase alphanumeric hyphenated)")
         basic_report(dependency_checker.invalid_package_names, "the following package names do not match the naming convention (lowercase alphanumeric hyphenated)")
         basic_report(dependency_checker.invalid_variant_names, "the following variant labels or values do not match the naming convention (alphanumeric hyphenated or dots)")
+        basic_report(sorted(set(dependency_checker.verbose_variant_names)), "",
+                     lambda tup: "Naming issue: Avoid repeating the variant ID {0!r} in the variant's value name {1!r}.".format(*tup))
         basic_report(dependency_checker.invalid_group_prefixes_in_names, "The following package identifiers are of the form `group:group-name`. Prefer `group:name` instead. (Or edit `lint-config.yaml` to disable the check for specific packages.)")
         basic_report(list(dependency_checker.package_asset_version_mismatches()),
                      "The versions of the following packages do not match the version of the referenced assets (usually they should agree, but if the version mismatch is intentional, the packages can be added to the 'ignore-version-mismatches' list in lint-config.yaml):",
