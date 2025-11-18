@@ -67,4 +67,8 @@ single-choice-variants: []
 ignore-group-prefixes-in-name: true
 # Or add an explicit list of packages for which the check is skipped. This implies false for all other packages.
 # ignore-group-prefixes-in-name: []
+
+# Some checks detect e.g. if two variants of a package unintentionally install the same files (i.e. the include patterns of the two variants are not unique).
+# In case of unresolvable false positives, add their package names here.
+ignore-nonunique-includes: []
 ```

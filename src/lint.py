@@ -10,6 +10,7 @@ from urllib.parse import (urlparse, parse_qs)
 import jsonschema
 from jsonschema import ValidationError
 import typing
+from dataclasses import dataclass
 
 # add subfolders as necessary
 default_subfolders = r"""
@@ -239,6 +240,20 @@ def create_schema(config):
     return package_schema, asset_schema, package_array_schema
 
 
+@dataclass(eq=True, frozen=True)
+class Stanza:
+    # A definition of file includes/excludes from a particular asset.
+    # Usually, each Stanza in a yaml file should be unique for each variant or package.
+    # This is a simplification, as verifying all variants and packages in a channel
+    # are _functionally different_ would be complex (i.e. not just different in variant or package names).
+    asset_ids: frozenset[str]
+    dependencies: frozenset[str]
+    include: frozenset[str]
+    exclude: frozenset[str]
+    withChecksumInclude: frozenset[str]
+    conditional_variant_ids: frozenset[str]
+
+
 class DependencyChecker:
 
     naming_convention = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -297,8 +312,10 @@ class DependencyChecker:
         self.superseded_with_assets = set()
         self.valid_global_variants = set(default_global_variants + config['global-variants'])
         self.unknown_global_variants = {}  # variantId -> pkg
+        self.ignore_nonunique_includes = set(config['ignore-nonunique-includes'])
+        self.duplicate_stanzas = []  # (pkg1, variant1, pkg2, variant2)
 
-    def aggregate_identifiers(self, doc):
+    def aggregate_identifiers(self, doc, stanzas: set[Stanza]):
         if 'assetId' in doc:
             asset = doc['assetId']
             if asset not in self.known_assets:
@@ -352,13 +369,47 @@ class DependencyChecker:
                         any(dep in local_conflicts for dep in doc.get('dependencies', []))):
                     self.bad_conflicts.add(pkg)
 
-                local_assets = list(asset_ids(obj))
-                self.referenced_assets.update(local_assets)
-                for a in local_assets:
+                local_asset_ids = list(asset_ids(obj))
+                self.referenced_assets.update(local_asset_ids)
+                for a in local_asset_ids:
                     if a in self.packages_using_asset:
                         self.packages_using_asset[a].add(pkg)
                     else:
                         self.packages_using_asset[a] = set([pkg])
+
+                # The following code makes an effort to extract stanzas that should be *unique*, but some edge cases will result in false-positives (e.g. when combining variants with conditional variants).
+                if local_asset_ids and pkg not in self.ignore_nonunique_includes:
+                    local_assets = [a for a in obj.get('assets', []) if 'assetId' in a and 'withConditions' not in a]
+                    local_cond_assets = [a for a in obj.get('assets', []) if 'assetId' in a and 'withConditions' in a]
+                    variant = obj.get('variant', {})
+                    new_stanzas = []
+                    if local_assets:
+                        stanza = Stanza(
+                                asset_ids=frozenset(a['assetId'] for a in local_assets),
+                                dependencies=frozenset() if obj is doc else frozenset(local_deps),  # ignore dependencies for top-level stanzas, as different packages should not install same files, regardless of dependencies
+                                include=frozenset(p for a in local_assets for p in a.get('include', [])),
+                                exclude=frozenset(p for a in local_assets for p in a.get('exclude', [])),
+                                withChecksumInclude=frozenset(w['include'] for a in local_assets for w in a.get('withChecksum', []) if 'include' in w),
+                                conditional_variant_ids=frozenset())
+                        new_stanzas.append((stanza, variant))
+                    for a in local_cond_assets:
+                        asset_ids_set = frozenset([a['assetId']])
+                        local_deps_set = frozenset(local_deps)
+                        for cond in a['withConditions']:
+                            stanza = Stanza(
+                                    asset_ids=asset_ids_set,
+                                    dependencies=local_deps_set,
+                                    include=frozenset(a.get('include', []) + cond.get('include', [])),
+                                    exclude=frozenset(a.get('exclude', []) + cond.get('exclude', [])),
+                                    withChecksumInclude=frozenset(w['include'] for w in cond.get('withChecksum', []) if 'include' in w),
+                                    conditional_variant_ids=frozenset(cond.get('ifVariant', {}).keys()))
+                            new_stanzas.append((stanza, variant | cond.get('ifVariant', {})))
+                    for stanza, variant in new_stanzas:
+                        p2v2 = stanzas.get(stanza)
+                        if p2v2 is None:
+                            stanzas[stanza] = pkg, variant
+                        else:
+                            self.duplicate_stanzas.append(p2v2 + (pkg, variant))
 
             num_doc_assets = len(doc.get('assets', []))
             if num_doc_assets <= 1:
@@ -693,6 +744,7 @@ def load_config(config_path):
         'global-variants': [],
         'single-choice-variants': [],
         'ignore-group-prefixes-in-name': True,
+        'ignore-nonunique-includes': [],
     }
     try:
         with open(config_path, encoding='utf-8') as f:
@@ -758,6 +810,7 @@ def main() -> int:
                     text = f.read()
                     try:
                         validate_document_separators(text)
+                        stanzas = {}  # stanza -> (pkg, variant)  # We only verify uniqueness of stanzas within a single yaml file to avoid storing the entire channel data in memory. Duplicate stanzas across more than one yaml file are less likely.
                         for doc in yaml.load_all(text, Loader=UniqueKeyLoader):  # yaml.safe_load_all(text):
                             if doc is None:  # empty yaml file or document
                                 continue
@@ -773,11 +826,11 @@ def main() -> int:
                                 msgs.append(err.message)
                             elif "packages" in doc:
                                 for subDoc in doc.get("packages", []):
-                                    dependency_checker.aggregate_identifiers(subDoc)
+                                    dependency_checker.aggregate_identifiers(subDoc, stanzas)
                                 for subDoc in doc.get("assets", []):
-                                    dependency_checker.aggregate_identifiers(subDoc)
+                                    dependency_checker.aggregate_identifiers(subDoc, stanzas)
                             else:
-                                dependency_checker.aggregate_identifiers(doc)
+                                dependency_checker.aggregate_identifiers(doc, stanzas)
                     except (yaml.parser.ParserError, yaml.constructor.ConstructorError) as err:
                         msgs.append(str(err))
                 if msgs:
@@ -830,6 +883,14 @@ def main() -> int:
         basic_report(dependency_checker.superseded_with_assets, "The following packages are superseded, so they usually should not reference an asset, but should only refer to the new dependency instead.")
         basic_report(dependency_checker.unknown_global_variants.items(), "",
                      lambda tup: f"""Variant IDs should use the package namespace by prefixing them with the package identifier, so replace "{tup[0]}" by "{tup[1]}:{str(tup[0]).lower()}" for example.""")
+        basic_report(dependency_checker.duplicate_stanzas, "(If the following warnings cannot be resolved (using e.g. `withConditions` or by dropping redundant variants), then edit `lint-config.yaml` to add the packages to `ignore-nonunique-includes`.)",
+                     lambda tup: (
+                         "Two different variants of the package {0!r} seem to install the _same_ files, unintentionally. Consider removing them if they are the same.\n  {1}\n  vs\n  {3}"
+                         if tup[0] == tup[2] else
+                         "The packages {0!r} and {2!r} seem to install the _same_ files, unintentionally. Variants:\n  {1}\n  vs\n  {3}"
+                         if tup[1] or tup[3] else
+                         "The packages {0!r} and {2!r} seem to install the _same_ files, unintentionally."
+                     ).format(*tup))
 
     if errors > 0:
         print(f"Finished with {errors} errors.")
