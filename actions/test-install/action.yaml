@@ -79,18 +79,63 @@ runs:
         cat "$GITHUB_WORKSPACE/modified-packages.txt"
         echo "Found $(wc -l < "$GITHUB_WORKSPACE/modified-packages.txt") modified packages."
 
+    - name: Check preconditions for test
+      shell: bash
+      env:
+        MAX_PKGS: ${{ inputs.max-packages }}
+      run: |
+        : Check preconditions for test
+        if [[ $(wc -l < "$GITHUB_WORKSPACE/modified-packages.txt") -gt "$MAX_PKGS" ]]; then echo "::error::Too many packages." ; false; fi
+        if [[ $(wc -l < "$GITHUB_WORKSPACE/modified-packages.txt") -eq 0 ]]; then echo "::error::Found no packages to test." ; false; fi
+
+    - name: Identify assets to download
+      shell: bash
+      id: get-assets-list
+      run: |
+        : Identify assets to download
+        assets_list="$(cat "$GITHUB_WORKSPACE/modified-packages.txt" \
+          | xargs --delimiter '\n' sc4pac test --yes --list-assets \
+          | grep '^\S')"
+        echo "$assets_list"
+        echo "assets_list=$assets_list" >> $GITHUB_OUTPUT
+        echo "cache_key=$(echo "$assets_list" | cut -d ' ' -f 2- | sort | sha256sum | head -c 12)" >> $GITHUB_OUTPUT
+
+      # The above cache_key is derived from `version` and `url` only, ignoring `assetId`.
+      # Hence, changing an assetId does not invalidate the cache, but changing an asset version or URL triggers a redownload.
+    - name: Restore the download cache
+      id: restore-cache
+      uses: actions/cache/restore@v4
+      with:
+        key: sc4pac-download-cache-${{ steps.get-assets-list.outputs.cache_key }}
+        path: ${{ inputs.sc4pac-cache }}
+
+    - name: Download assets
+      if: steps.restore-cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        SC4PAC_SIMTROPOLIS_TOKEN: ${{ inputs.sc4pac-simtropolis-token }}
+        # enforce ANSI colors with GH actions:
+        SC4PAC_JAVA_OPTIONS: '-Djansi.mode=force'
+      run: |
+        : Download assets
+        cat "$GITHUB_WORKSPACE/modified-packages.txt" \
+          | xargs --delimiter '\n' sc4pac test --yes --download-only
+
+    - name: Save the download cache
+      if: steps.restore-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ steps.restore-cache.outputs.cache-primary-key }}
+        path: ${{ inputs.sc4pac-cache }}
+
     - name: Test installing modified packages
       shell: bash
       env:
         SC4PAC_SIMTROPOLIS_TOKEN: ${{ inputs.sc4pac-simtropolis-token }}
-        MAX_PKGS: ${{ inputs.max-packages }}
         # enforce ANSI colors with GH actions:
         SC4PAC_JAVA_OPTIONS: '-Djansi.mode=force'
       run: |
         : Test installing modified packages
-        if [[ $(wc -l < "$GITHUB_WORKSPACE/modified-packages.txt") -gt "$MAX_PKGS" ]]; then echo "Too many packages." ; false; fi
-        if [[ $(wc -l < "$GITHUB_WORKSPACE/modified-packages.txt") -eq 0 ]]; then echo "Found no packages to test." ; false; fi
-
         cat "$GITHUB_WORKSPACE/modified-packages.txt" \
           | xargs --delimiter '\n' sc4pac test --yes --output "tmp_build/plugins"
 

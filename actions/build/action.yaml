@@ -50,14 +50,38 @@ runs:
       LABEL: ${{ inputs.channel-label }}
       METADATA_SOURCE_URL: ${{ inputs.metadata-source-url }}
 
+  - name: Get sc4pac-tools submodule info
+    if: ${{ inputs.sc4pac-tools-submodule != '' }}
+    id: get-submodule-info
+    shell: bash
+    run: |
+      echo "sha_short=$(git rev-parse --short=8 @:"$SC4PAC_TOOLS")" >> $GITHUB_OUTPUT
+    env:
+      SC4PAC_TOOLS: ${{ inputs.sc4pac-tools-submodule }}
+
+  - uses: actions/cache@v4
+    if: ${{ inputs.sc4pac-tools-submodule != '' }}
+    id: cache-sc4pac-website
+    with:
+      path: ${{ format('{0}/web/target/website/channel', inputs.sc4pac-tools-submodule) }}
+      key: sc4pac-website-scalajs-${{ steps.get-submodule-info.outputs.sha_short }}-${{ runner.os }}
+
   - uses: sbt/setup-sbt@v1
-    if: ${{ inputs.sc4pac-tools-submodule != '' }}
+    if: ${{ inputs.sc4pac-tools-submodule != '' && steps.cache-sc4pac-website.outputs.cache-hit != 'true' }}
   - name: Build website
-    if: ${{ inputs.sc4pac-tools-submodule != '' }}
+    if: ${{ inputs.sc4pac-tools-submodule != '' && steps.cache-sc4pac-website.outputs.cache-hit != 'true' }}
     shell: bash
     run: |
       : Build website
       (cd "$SC4PAC_TOOLS" && ./src/scripts/build-channel-page.sh)
+    env:
+      SC4PAC_TOOLS: ${{ inputs.sc4pac-tools-submodule }}
+
+  - name: Combine website, docs and channel
+    if: ${{ inputs.sc4pac-tools-submodule != '' }}
+    shell: bash
+    run: |
+      : Combine website, docs and channel
       cp -p "$SC4PAC_TOOLS/web/target/website/channel"/* "$PAGES/channel/"
       cp -pr docs/. "$PAGES"
     env:
