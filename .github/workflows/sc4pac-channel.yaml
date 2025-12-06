@@ -64,7 +64,10 @@ jobs:
     - name: Install sc4pac-lint
       uses: memo33/sc4pac-actions/actions/setup-lint@main
     - name: Lint
-      run: sc4pac-lint "$SRC_YAML"
+      # TODO
+      run: |
+        echo 'file: [src/yaml/memo/test.yaml](src/yaml/memo/test.yaml)' >> $GITHUB_STEP_SUMMARY
+        sc4pac-lint "$SRC_YAML"
       env:
         SRC_YAML: ${{ inputs.path }}
 

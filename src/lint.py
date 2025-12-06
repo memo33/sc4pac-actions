@@ -835,7 +835,7 @@ def main() -> int:
                         msgs.append(str(err))
                 if msgs:
                     errors += len(msgs)
-                    print(f"===> {p}")
+                    print(f"::error file={p}::===> {p}")
                     for msg in msgs:
                         print(msg)
 
@@ -893,7 +893,7 @@ def main() -> int:
                      ).format(*tup))
 
     if errors > 0:
-        print(f"Finished with {errors} errors.")
+        print(f"::error::Finished with {errors} errors.")
         return 1
     else:
         print(f"Successfully validated {validated} files.")
