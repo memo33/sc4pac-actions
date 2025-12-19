@@ -97,7 +97,6 @@ runs:
           | xargs --delimiter '\n' sc4pac test --yes --list-assets \
           | grep '^\S')"
         echo "$assets_list"
-        echo "assets_list=$assets_list" >> $GITHUB_OUTPUT
         echo "cache_key=$(echo "$assets_list" | cut -d ' ' -f 2- | sort | sha256sum | head -c 12)" >> $GITHUB_OUTPUT
 
       # The above cache_key is derived from `version` and `url` only, ignoring `assetId`.
