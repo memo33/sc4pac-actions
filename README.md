@@ -71,4 +71,7 @@ ignore-group-prefixes-in-name: true
 # Some checks detect e.g. if two variants of a package unintentionally install the same files (i.e. the include patterns of the two variants are not unique).
 # In case of unresolvable false positives, add their package names here.
 ignore-nonunique-includes: []
+
+# Packages or asset IDs that are allowed to be redefined even though they already exist in another channel
+allow-remote-overwriting: []
 ```

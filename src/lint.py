@@ -314,6 +314,10 @@ class DependencyChecker:
         self.unknown_global_variants = {}  # variantId -> pkg
         self.ignore_nonunique_includes = set(config['ignore-nonunique-includes'])
         self.duplicate_stanzas = []  # (pkg1, variant1, pkg2, variant2)
+        self._remote_channels = [self._get_channel_contents(channel_url) for channel_url in self.config['extra-channels']]
+        self._remote_assets = set(pkg['name'] for c in self._remote_channels for pkg in c['assets'])
+        self._remote_packages = set(f"{pkg['group']}:{pkg['name']}" for c in self._remote_channels for pkg in c['packages'])
+        self.allowed_remote_overwrites = set(config['allow-remote-overwriting'])  # packages or assets
 
     def aggregate_identifiers(self, doc, stanzas: set[Stanza]):
         if 'assetId' in doc:
@@ -504,20 +508,18 @@ class DependencyChecker:
         return channel_contents
 
     def unknowns(self):
-        packages = self.referenced_packages.difference(self.known_packages)
-        assets = self.referenced_assets.difference(self.known_assets)
-        if packages or assets:
-            # some dependencies are not known, so check other channels
-            channels = [self._get_channel_contents(channel_url) for channel_url in self.config['extra-channels']]
-            remote_assets = [pkg['name'] for c in channels for pkg in c['assets']]
-            remote_packages = [f"{pkg['group']}:{pkg['name']}" for c in channels for pkg in c['packages']]
-            packages = packages.difference(remote_packages)
-            assets = assets.difference(remote_assets)
+        packages = self.referenced_packages.difference(self.known_packages).difference(self._remote_packages)
+        assets = self.referenced_assets.difference(self.known_assets).difference(self._remote_assets)
         return {'packages': sorted(packages), 'assets': sorted(assets)}
 
     def duplicates(self):
         return {'packages': sorted(self.duplicate_packages),
                 'assets': sorted(self.duplicate_assets)}
+
+    def illegal_remote_overwrites(self):
+        packages = self.known_packages.intersection(self._remote_packages).difference(self.allowed_remote_overwrites)
+        assets = self.known_assets.intersection(self._remote_assets).difference(self.allowed_remote_overwrites)
+        return {'packages': sorted(packages), 'assets': sorted(assets)}
 
     def assets_with_same_url(self):
         url_assets = {u: a for a, u in self.asset_urls.items()}
@@ -745,6 +747,7 @@ def load_config(config_path):
         'single-choice-variants': [],
         'ignore-group-prefixes-in-name': True,
         'ignore-nonunique-includes': [],
+        'allow-remote-overwriting': [],
     }
     try:
         with open(config_path, encoding='utf-8') as f:
@@ -846,6 +849,8 @@ def main() -> int:
             basic_report(unknown, f"The following {label} are referenced, but not defined:")
         for label, dupes in dependency_checker.duplicates().items():
             basic_report(dupes, f"The following {label} are defined multiple times:")
+        for label, unknown in dependency_checker.illegal_remote_overwrites().items():
+            basic_report(unknown, f"The following {label} overwrite ones that already exist in another channel (remove them, rename them, or edit `lint-config.yaml` to add them to `allow-remote-overwriting`):")
         basic_report(dependency_checker.self_dependencies, "The following packages unnecessarily depend on themselves:")
         basic_report(dependency_checker.bad_conflicts, "The following packages conflict with their dependencies or themselves, which prevents them from getting installed at all:")  # this check is not exhaustive here, but only intended to catch obvious mistakes
         basic_report(dependency_checker.unexpected_variant_specific_dependencies, "The following packages have dependencies that should only be used with specific variants:",
