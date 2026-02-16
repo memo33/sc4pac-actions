@@ -167,10 +167,6 @@ def create_schema(config):
                     },
                 },
             },
-            "variantDescriptions": {
-                "type": "object",
-                "patternProperties": {".*": map_of_strings},
-            },
             "variantInfo": {
                 "type": "array",
                 "unique_by": "variantId",
@@ -305,7 +301,6 @@ class DependencyChecker:
         self.packages_with_checksum = []  # (pkg, group, assetId)
         self.unexpected_variant_specific_dependencies = []  # (pkg, dependency)
         self.duplicate_website_fields = set()
-        self.deprecated_variant_descs = set()
         self.invalid_variant_info_ids = []
         self.invalid_variant_info_values = []
         self.duplicate_default_variants = []
@@ -476,8 +471,6 @@ class DependencyChecker:
                 self.superseded_with_assets.add(pkg)
 
             variant_info = doc.get('variantInfo', [])
-            if variant_info and 'variantDescriptions' in doc:
-                self.deprecated_variant_descs.add(pkg)
             for vinfo in variant_info:
                 variant_id = vinfo.get('variantId')
                 if variant_id not in variant_keys:
@@ -873,7 +866,6 @@ def main() -> int:
         basic_report(dependency_checker.assets_http_without_checksum, "The following assets use http instead of https. They should include a `checksum` field.")
         basic_report(list(dependency_checker.dlls_without_github_messages()), "DLLs should be downloaded from the author's GitHub releases to ensure authenticity.")
         basic_report(dependency_checker.duplicate_website_fields, """The following packages define both "website" and "websites" fields (use only one of them):""")
-        basic_report(dependency_checker.deprecated_variant_descs, """The following packages define both "variantDescriptions" and "variantInfo" fields (use only "variantInfo"):""")
         basic_report(dependency_checker.invalid_variant_info_ids, "",
                      lambda tup: """The "variantInfo" field defines a variantId "{1}" which does not exist in package "{0}".""".format(*tup))
         basic_report(dependency_checker.invalid_variant_info_values, "",
