@@ -72,3 +72,9 @@ ignore-group-prefixes-in-name: true
 # In case of unresolvable false positives, add their package names here.
 ignore-nonunique-includes: []
 ```
+
+To run the linter locally, clone this repository and run the linter from the root of the metadata repository.
+For example:
+```sh
+python ../sc4pac-actions/src/lint.py src/yaml
+```
