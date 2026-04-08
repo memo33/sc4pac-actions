@@ -12,9 +12,10 @@ import os
 import re
 import argparse
 from dateutil.parser import isoparse
-from datetime import timezone, timedelta
+from datetime import timezone, timedelta, datetime
 import urllib.request
 import json
+from dataclasses import dataclass
 
 
 def nonempty_docs(dirs_or_files):
@@ -141,6 +142,24 @@ class StexApi(ExchangeApi):
         return True, ""
 
 
+@dataclass
+class AssetUpdateInfo:
+    asset_id: str
+    version: str
+    version_upstream: str
+    last_modified: datetime
+    last_modified_upstream: datetime
+    url: str
+    yaml_path: str
+
+    def __str__(self):
+        return (f"""{self.asset_id}:
+  version: {self.version} -> {self.version_upstream}
+  lastModified: {self.last_modified.isoformat().replace('+00:00', 'Z')} -> {self.last_modified_upstream.isoformat().replace('+00:00', 'Z')}
+  URL: {self.url}
+  YAML: {self.yaml_path}""")
+
+
 def check_updates(api, docs, upstream_state):
     errors = 0
     out_of_date = 0
@@ -178,11 +197,16 @@ def check_updates(api, docs, upstream_state):
             else:
                 errors += 1  # our assets should not be newer than upstream's assets TODO
                 print("error: ", end='')
-            print(f"{doc.get('assetId')}:")
-            print(f"  {doc.get('version')} -> {api.upstream_version(upstream_entry)}")
-            print(f"  {last_modified.isoformat().replace('+00:00', 'Z')} -> {last_modified_upstream.isoformat().replace('+00:00', 'Z')}")
-            print(f"  {api.upstream_download_url(upstream_entry)}")
-            print(f"  {p}")
+
+            update_info = AssetUpdateInfo(
+                asset_id=doc.get('assetId'),
+                version=doc.get('version'),
+                version_upstream=api.upstream_version(upstream_entry),
+                last_modified=last_modified,
+                last_modified_upstream=last_modified_upstream,
+                url=api.upstream_download_url(upstream_entry),
+                yaml_path=p)
+            print(update_info)
     return out_of_date, up_to_date, skipped, errors
 
 
