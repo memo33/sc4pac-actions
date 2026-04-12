@@ -1,0 +1,138 @@
+name: create-pr
+description: Creates or updates a PR for a metadata YAML update patch.
+inputs:
+  path:
+    description: YAML file or directory
+    required: true
+  patch-file:
+    description: Patch file for the metadata update
+    required: true
+  branch:
+    description: Branch name for PR
+    required: true
+  name:
+    description: PR title
+    required: true
+  body:
+    description: a file containing the PR body
+    required: true
+  base-branch:
+    description: Base branch
+    required: true
+  github-token:
+    description: GitHub PAT
+    required: true
+outputs:
+  pr-url:
+    description: "URL of created or updated PR"
+    value: ${{ steps.pr.outputs.pr_url }}
+  action:
+    description: "Action taken: create, update, or empty"
+    value: ${{ steps.pr.outputs.action }}
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout base branch
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        persist-credentials: true
+        ref: ${{ inputs.base-branch }}
+        token: ${{ inputs.github-token }}
+    - name: Check if branch exists
+      id: check-branch
+      shell: bash
+      run: |
+        if git ls-remote --exit-code --heads origin "$BRANCH"; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+      env:
+        BRANCH: ${{ inputs.branch }}
+    - name: Fetch branch if exists
+      if: steps.check-branch.outputs.exists == 'true'
+      shell: bash
+      run: git fetch origin "$BRANCH"
+      env:
+        BRANCH: ${{ inputs.branch }}
+    - name: Try patch on merge base if branch exists
+      if: steps.check-branch.outputs.exists == 'true'
+      id: try-patch
+      shell: bash
+      run: |
+        git checkout "$BRANCH"
+        base_commit=$(git merge-base "$BRANCH" "$BASE_BRANCH")
+        echo "Checking out base commit $base_commit for patch application"
+        git checkout "$base_commit"
+        # git reset --hard
+        # git clean -fdx
+        patch_applied=0
+        if git apply --unidiff-zero --whitespace=nowarn "$PATCH_FILE"; then
+          git add "$YAML_PATH"
+          if git diff --quiet "$BRANCH" -- "$YAML_PATH"; then
+            patch_applied=1
+            echo "::notice::Patch is already up-to-date with branch $BRANCH"
+          fi
+        fi
+        echo "patch_applied=$patch_applied" >> $GITHUB_OUTPUT
+      env:
+        BRANCH: ${{ inputs.branch }}
+        BASE_BRANCH: ${{ inputs.base-branch }}
+        PATCH_FILE: ${{ inputs.patch-file }}
+        YAML_PATH: ${{ inputs.path }}
+    - name: Recreate branch and apply patch
+      if: steps.check-branch.outputs.exists != 'true' || steps.try-patch.outputs.patch_applied != '1'
+      shell: bash
+      run: |
+        git reset --hard @
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git checkout -B "$BRANCH" "$BASE_BRANCH"
+        git apply --unidiff-zero --whitespace=nowarn "$PATCH_FILE"
+        git add "$YAML_PATH"
+        git commit -m "$MSG"
+      env:
+        BRANCH: ${{ inputs.branch }}
+        BASE_BRANCH: ${{ inputs.base-branch }}
+        PATCH_FILE: ${{ inputs.patch-file }}
+        YAML_PATH: ${{ inputs.path }}
+        MSG: ${{ inputs.name }}
+    - name: Push branch
+      if: steps.check-branch.outputs.exists != 'true' || steps.try-patch.outputs.patch_applied != '1'
+      shell: bash
+      run: git push --force-with-lease origin "$BRANCH"
+      env:
+        BRANCH: ${{ inputs.branch }}
+    - name: Create or update PR
+      id: pr
+      if: steps.check-branch.outputs.exists != 'true' || steps.try-patch.outputs.patch_applied != '1'
+      shell: bash
+      run: |
+        pr_url=""
+        action=""
+        existing_pr=$(gh pr list --head "$BRANCH" --json url -q '.[0].url' --repo "$GITHUB_REPOSITORY")
+        body_text="$(printf 'Update for `%s`:\n```\n%s\n```\n%s' \
+                       "$YAML_PATH" \
+                       "$(cat "$BODY")" \
+                       "$(grep -oP '^\s*\KWebsite:\s+http.*' "$BODY" | uniq)" \
+                    )"
+        if [ -n "$existing_pr" ]; then
+          gh pr edit "$existing_pr" --title "$TITLE" --body "$body_text"
+          pr_url="$existing_pr"
+          action="update"
+          echo "::notice::Updated PR for branch $BRANCH"
+        else
+          pr_url=$(gh pr create --title "$TITLE" --body "$body_text" --base "$BASE_BRANCH" --head "$BRANCH" --repo "$GITHUB_REPOSITORY")
+          action="create"
+          echo "::notice::Created new PR for branch $BRANCH: $pr_url"
+        fi
+        echo "pr_url=$pr_url" >> $GITHUB_OUTPUT
+        echo "action=$action" >> $GITHUB_OUTPUT
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        TITLE: ${{ inputs.name }}
+        BODY: ${{ inputs.body }}
+        BASE_BRANCH: ${{ inputs.base-branch }}
+        BRANCH: ${{ inputs.branch }}
+        YAML_PATH: ${{ inputs.path }}

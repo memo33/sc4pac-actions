@@ -16,7 +16,6 @@ from datetime import timezone, timedelta, datetime
 import urllib.request
 import json
 from dataclasses import dataclass
-from ruamel.yaml import YAML
 import copy
 from collections import defaultdict
 import tempfile
@@ -43,7 +42,7 @@ def nonempty_docs(dirs_or_files):
 
 
 class ExchangeApi:
-    def fetch_upstream_state(self, file_ids=None):
+    def fetch_upstream_state(self, file_ids=None, load_reports_dir=None, save_reports_dir=None):
         raise NotImplementedError
 
     def extract_id(self, url):
@@ -67,16 +66,58 @@ class ExchangeApi:
         return url
 
 
+def _fetch_with_retry(req):
+    import time
+    from urllib.error import HTTPError
+    retried = False
+    while True:
+        try:
+            with urllib.request.urlopen(req) as data:
+                report = json.load(data)
+                return report
+        except HTTPError as e:
+            if e.code == 403 and not retried:
+                print("Received 403 Forbidden, retrying after 5 seconds...")
+                retried = True
+                time.sleep(5)
+                continue
+            else:
+                print(f"::error file=check-updates.py,line={e.__traceback__.tb_lineno}::HTTP error {e.code} for URL {req.full_url.split('?', 1)[0]}")
+                raise
+
+
+def _fetch_with_cache(req, load_reports_file=None, save_reports_file=None):
+    report = None
+    if load_reports_file:
+        try:
+            with open(load_reports_file, "r", encoding="utf-8") as f:
+                report = json.load(f)
+                print(f"Loaded report from {load_reports_file}")
+        except IOError:
+            pass  # file does not exist
+    if report is None:
+        report = _fetch_with_retry(req)
+    if save_reports_file:
+        os.makedirs(os.path.dirname(save_reports_file), exist_ok=True)
+        with open(save_reports_file, "w", encoding="utf-8") as f:
+            json.dump(report, f)
+            print(f"Saved report to {save_reports_file}")
+    return report
+
+
 class Sc4eApi(ExchangeApi):
     url_id_pattern = re.compile(r".*sc4evermore.com/.*[?&]id=(\d+).*")
+    report_file = "sc4e-report.json"
 
-    def fetch_upstream_state(self, file_ids=None):
+    def fetch_upstream_state(self, file_ids=None, load_reports_dir=None, save_reports_dir=None):
         req = urllib.request.Request(
             "https://www.sc4evermore.com/latest-modified-downloads.php",
             headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as data:
-            report = json.load(data)
-            return {str(item['id']): item for item in report['files']}
+        report = _fetch_with_cache(
+                req,
+                save_reports_file=os.path.join(save_reports_dir, self.report_file) if save_reports_dir else None,
+                load_reports_file=os.path.join(load_reports_dir, self.report_file) if load_reports_dir else None)
+        return {str(item['id']): item for item in report['files']}
 
     def extract_id(self, url):
         m = self.url_id_pattern.fullmatch(url)
@@ -100,12 +141,13 @@ class StexApi(ExchangeApi):
     url_id_pattern = re.compile(r".*simtropolis.com/files/file/(\d+)-.*?(?:$|[?&]r=(\d+).*$)")  # matches ID and optional subfile ID
     since_days = 180  # to keep the request small
     id_limit = 250  # to keep the request small
+    report_file = "stex-report.json"
 
     def __init__(self, api_key, mode="updated"):
         self.api_key = api_key
         self.mode = mode
 
-    def fetch_upstream_state(self, file_ids=None):
+    def fetch_upstream_state(self, file_ids=None, load_reports_dir=None, save_reports_dir=None):
         if self.mode == "id":
             if not file_ids:
                 return {}
@@ -113,9 +155,11 @@ class StexApi(ExchangeApi):
         else:
             req_url = f"https://community.simtropolis.com/stex/files-api.php?key={self.api_key}&days={self.since_days}&mode=updated&sc4only=true&sort=desc"
         req = urllib.request.Request(req_url, headers={'User-Agent': 'Mozilla/5.0 Firefox/130.0'})
-        with urllib.request.urlopen(req) as data:
-            report = json.load(data)
-            return {str(item['id']): item for item in report}
+        report = _fetch_with_cache(
+                req,
+                save_reports_file=os.path.join(save_reports_dir, self.report_file) if save_reports_dir else None,
+                load_reports_file=os.path.join(load_reports_dir, self.report_file) if load_reports_dir else None)
+        return {str(item['id']): item for item in report}
 
     def extract_id(self, url):
         m = self.url_id_pattern.fullmatch(url)
@@ -500,6 +544,7 @@ def extract_file_from_archive(asset_path, tmpdir, asset_id, incl):
 
 def update_yaml_file_in_place(yaml_path, asset_updates, downloader):
     """Update the yaml file in place using ruamel.yaml, preserving formatting."""
+    from ruamel.yaml import YAML
     yaml = YAML()
     yaml.preserve_quotes = True
     yaml.width = 4096
@@ -585,6 +630,8 @@ def main():
     parser.add_argument('--mode', choices=['id', 'updated'], default='updated', help="STEX: query mode (default: updated); query all IDs from given yaml files, or query recently updated STEX entries")
     parser.add_argument('--update', action='store_true', help="Update YAML files in place with upstream asset info")
     parser.add_argument('-y', '--yes', action='store_true', help="Download assets without confirmation if --update is set")
+    parser.add_argument('--save-reports', type=str, help="Directory to save fetched reports (for caching)")
+    parser.add_argument('--load-reports', type=str, help="Directory to load cached reports (for offline/cached use)")
     parser.add_argument('paths', nargs='*', help="YAML files or directories to check")
     args = parser.parse_args()
     if not args.api:
@@ -608,9 +655,9 @@ def main():
     total_errors = 0
     file_to_updates = {} if args.update else None
     for label, api in apis:
-        # For STEX in id mode, collect file IDs first
-        file_ids = []
         if isinstance(api, StexApi) and api.mode == "id":
+            # For STEX in id mode, collect file IDs first
+            file_ids = []
             for path, doc_list in docs:
                 if doc_list is None:  # TODO parse error
                     continue
@@ -624,9 +671,9 @@ def main():
             if not file_ids:
                 print("No STEX file IDs found in yaml files.")
                 continue
-            upstream_state = api.fetch_upstream_state(file_ids=file_ids)
         else:
-            upstream_state = api.fetch_upstream_state()
+            file_ids = None
+        upstream_state = api.fetch_upstream_state(file_ids=file_ids, load_reports_dir=args.load_reports, save_reports_dir=args.save_reports)
         out_of_date, up_to_date, skipped, errors = check_updates(api, docs, upstream_state, file_to_updates, update_mode=args.update)
         total_errors += errors
         skipped_msg = (
