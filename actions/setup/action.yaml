@@ -15,7 +15,7 @@ runs:
       SC4PAC_VERSION="$(echo "$SC4PAC_ZIP_URL" | cut -d '/' -f 8)"
       echo "version=$SC4PAC_VERSION" >> $GITHUB_OUTPUT
 
-  - uses: actions/cache@v4
+  - uses: actions/cache@v5
     id: cache-sc4pac
     with:
       path: ${{ format('{0}/sc4pac-latest.zip', github.action_path) }}

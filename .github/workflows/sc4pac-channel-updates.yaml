@@ -35,7 +35,7 @@ jobs:
       updated-files: ${{ steps.check.outputs.updated-files }}
       has-updates: ${{ steps.check.outputs.has-updates }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: true
           token: ${{ secrets.pat }}
@@ -74,7 +74,7 @@ jobs:
       matrix:
         yaml-path: ${{ fromJson(needs.check-updates.outputs.updated-files) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Download reports artifact

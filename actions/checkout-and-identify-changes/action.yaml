@@ -15,7 +15,7 @@ outputs: {}
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         # to allow diff of other commit
         fetch-depth: 0
@@ -25,7 +25,7 @@ runs:
           ${{ inputs.path }}
     - name: Checkout pull request
       if: ${{ github.event_name == 'pull_request_target' }}
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         persist-credentials: false
         # For pull_request_target:
