@@ -95,7 +95,7 @@ runs:
         : Identify assets to download
         assets_list="$(cat "$GITHUB_WORKSPACE/modified-packages.txt" \
           | xargs --delimiter '\n' sc4pac test --yes --list-assets \
-          | grep '^\S')"
+          | { grep '^\S' || true; } )"
         echo "$assets_list"
         echo "cache_key=$(echo "$assets_list" | cut -d ' ' -f 2- | sort | sha256sum | head -c 12)" >> $GITHUB_OUTPUT
 
