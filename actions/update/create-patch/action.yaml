@@ -1,0 +1,61 @@
+name: create-update-patch
+description: Creates a patch for a metadata YAML file if upstream exchange has newer version of an asset.
+inputs:
+  path:
+    description: YAML file or directory to create patch for
+    required: true
+  stex-api-key:
+    description: Required secret token for accessing the STEX API.
+    required: true
+  branch:
+    description: branch to checkout
+    required: true
+  reports-dir:
+    description: Directory to load cached reports from (absolute path)
+    required: false
+outputs:
+  patch-file:
+    description: Patch file path
+    value: ${{ steps.patch.outputs.patch_file }}
+  update-log:
+    description: Log output of update
+    value: ${{ steps.patch.outputs.update_log }}
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+    - name: Install dependencies
+      shell: bash
+      run: python -m pip install --upgrade PyYAML python-dateutil ruamel.yaml
+    - name: Setup sc4pac
+      uses: memo33/sc4pac-actions/actions/setup@main
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+        path: 'tmprepo'
+        ref: ${{ inputs.branch }}
+        sparse-checkout: |
+          ${{ inputs.path }}
+    - name: Run update and create patch
+      id: patch
+      shell: bash
+      # Note that the cached report was not generated with --mode=id, but that
+      # doesn't matter here as the cached report contains exactly what we need
+      # for this update
+      run: |
+        cd tmprepo
+        python "$GITHUB_ACTION_PATH/../../../src/check-updates.py" \
+          ${REPORTS_DIR:+--load-reports="$REPORTS_DIR"} \
+          --mode=id --update --yes "$SRC_YAML" 2>&1 | tee "$RUNNER_TEMP/update.log"
+        git diff -U0 --ignore-all-space --ignore-blank-lines "$SRC_YAML" > "$RUNNER_TEMP/update.patch" || true
+        cd -
+        echo "patch_file=$RUNNER_TEMP/update.patch" >> $GITHUB_OUTPUT
+        echo "update_log=$RUNNER_TEMP/update.log" >> $GITHUB_OUTPUT
+      env:
+        STEX_API_KEY: ${{ inputs.stex-api-key }}
+        SRC_YAML: ${{ inputs.path }}
+        REPORTS_DIR: ${{ inputs.reports-dir }}

@@ -1,0 +1,113 @@
+name: sc4pac-channel-updates
+
+on:
+  # schedule:
+  #   - cron: '15 16 * * *'  # 4:15 pm UTC daily
+  # workflow_dispatch:
+  workflow_call:
+    inputs:
+      path:
+        description: Path to yaml sources directory (e.g. "src" or "src/yaml"), without unnecessary leading or trailing `/` characters.
+        required: true
+        type: string
+      deploy-repository:
+        description: The repository for deployment (to prevent deployment in forks) in the form 'OWNER/REPO'
+        required: true
+        type: string
+      base-branch:
+        description: The base branch to compare against for updates (e.g. "main").
+        required: false
+        type: string
+        default: ${{ github.event.repository.default_branch }}
+    secrets:
+      pat:
+        description: Personal Access Token with repo permissions for creating/updating PRs (Contents, Pull Requests).
+        required: true
+      stex-api-key:
+        description: A private key for accessing the STEX API.
+        required: true
+
+jobs:
+  check-updates:
+    if: github.repository == inputs.deploy-repository
+    runs-on: ubuntu-latest
+    outputs:
+      updated-files: ${{ steps.check.outputs.updated-files }}
+      has-updates: ${{ steps.check.outputs.has-updates }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: true
+          token: ${{ secrets.pat }}
+      - id: check
+        uses: memo33/sc4pac-actions/actions/update/check-updates@main
+        with:
+          path: ${{ inputs.path }}
+          stex-api-key: ${{ secrets.stex-api-key }}
+          reports-dir: api_reports
+      - name: Upload reports artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports.zip
+          path: api_reports/
+          retention-days: 1
+      - name: Cleanup orphaned `update/*` branches
+        shell: bash
+        run: |
+          git fetch --prune
+          for branch in $(git branch -r | grep 'origin/update/' | sed 's|\s*origin/||'); do
+            pr_count=$(gh pr list --head "$branch" --state open --json number -q 'length')
+            if [ "$pr_count" -eq 0 ]; then
+              echo "Deleting orphaned branch $branch"
+              git push origin --delete "$branch"
+            fi
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.pat }}
+
+  apply-updates:
+    needs: check-updates
+    if: needs.check-updates.outputs.has-updates == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        yaml-path: ${{ fromJson(needs.check-updates.outputs.updated-files) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Download reports artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: reports.zip
+          path: ${{ format('{0}/api_reports', runner.temp) }}
+      - name: Compute PR branch name
+        id: branch
+        run: |
+          prefix="$SRC_YAML/"
+          name="${YAML_PATH#$prefix}"
+          name="${name%.yaml}"
+          echo "branch=update/$name" >> $GITHUB_OUTPUT
+          echo "title=update \`$name\`" >> $GITHUB_OUTPUT
+        env:
+          SRC_YAML: ${{ inputs.path }}
+          YAML_PATH: ${{ matrix.yaml-path }}
+      - name: Create current patch
+        uses: memo33/sc4pac-actions/actions/update/create-patch@main
+        id: patch
+        with:
+          path: ${{ matrix.yaml-path }}
+          stex-api-key: ${{ secrets.stex-api-key }}
+          branch: ${{ inputs.base-branch }}
+          reports-dir: ${{ format('{0}/api_reports', runner.temp) }}
+      - name: Create or update PR
+        uses: memo33/sc4pac-actions/actions/update/create-pr@main
+        with:
+          path: ${{ matrix.yaml-path }}
+          patch-file: ${{ steps.patch.outputs.patch-file }}
+          branch: ${{ steps.branch.outputs.branch }}
+          name: ${{ steps.branch.outputs.title }}
+          body: ${{ steps.patch.outputs.update-log }}
+          base-branch: ${{ inputs.base-branch }}
+          github-token: ${{ secrets.pat }}
