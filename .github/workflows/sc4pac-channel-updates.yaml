@@ -111,3 +111,5 @@ jobs:
           body: ${{ steps.patch.outputs.update-log }}
           base-branch: ${{ inputs.base-branch }}
           github-token: ${{ secrets.pat }}
+    permissions:
+      pull-requests: write

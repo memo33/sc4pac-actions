@@ -136,3 +136,11 @@ runs:
         BASE_BRANCH: ${{ inputs.base-branch }}
         BRANCH: ${{ inputs.branch }}
         YAML_PATH: ${{ inputs.path }}
+    - name: Comment on PR as github-actions bot to trigger notification
+      if: steps.pr.outputs.pr_url != ''
+      shell: bash
+      run: |
+        gh pr comment "$BRANCH" --body "Ready for review. @${{ github.actor }}"
+      env:
+        GITHUB_TOKEN: ${{ github.token }}  # not the PAT
+        BRANCH: ${{ inputs.branch }}
