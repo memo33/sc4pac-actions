@@ -32,7 +32,7 @@ runs:
       shell: bash
       run: |
         mkdir -p "$REPORTS_DIR"
-        (python "$GITHUB_ACTION_PATH/../../../src/check-updates.py" --save-reports="$REPORTS_DIR" "$SRC_YAML" || true) 2>&1 | tee "$RUNNER_TEMP/check-updates.log"
+        python "$GITHUB_ACTION_PATH/../../../src/check-updates.py" --no-exit-status --save-reports="$REPORTS_DIR" "$SRC_YAML" 2>&1 | tee "$RUNNER_TEMP/check-updates.log"
         { grep -oP '^\s*YAML:\s+\K.*\.yaml$' "$RUNNER_TEMP/check-updates.log" || true; } | sort | uniq > "$RUNNER_TEMP/updated-files.txt"
         if [[ -s "$RUNNER_TEMP/updated-files.txt" ]]; then
           echo "has_updates=true" >> $GITHUB_OUTPUT
