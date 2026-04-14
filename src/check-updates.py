@@ -632,6 +632,7 @@ def main():
     parser.add_argument('-y', '--yes', action='store_true', help="Download assets without confirmation if --update is set")
     parser.add_argument('--save-reports', type=str, help="Directory to save fetched reports (for caching)")
     parser.add_argument('--load-reports', type=str, help="Directory to load cached reports (for offline/cached use)")
+    parser.add_argument('--no-exit-status', action='store_true', help="Always exit with status 0 unless there is an unhandled exception")
     parser.add_argument('paths', nargs='*', help="YAML files or directories to check")
     args = parser.parse_args()
     if not args.api:
@@ -699,7 +700,8 @@ def main():
     if total_errors > 0:
         print(f"Finished with {total_errors} errors.")
         result |= 0x01
-    return result
+    return result if not args.no_exit_status else 0
+
 
 if __name__ == '__main__':
     sys.exit(main())

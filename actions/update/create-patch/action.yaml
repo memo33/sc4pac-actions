@@ -50,7 +50,7 @@ runs:
         cd tmprepo
         python "$GITHUB_ACTION_PATH/../../../src/check-updates.py" \
           ${REPORTS_DIR:+--load-reports="$REPORTS_DIR"} \
-          --mode=id --update --yes "$SRC_YAML" 2>&1 | tee "$RUNNER_TEMP/update.log"
+          --mode=id --no-exit-status --update --yes "$SRC_YAML" 2>&1 | tee "$RUNNER_TEMP/update.log"
         git diff -U0 --ignore-all-space --ignore-blank-lines "$SRC_YAML" > "$RUNNER_TEMP/update.patch" || true
         cd -
         echo "patch_file=$RUNNER_TEMP/update.patch" >> $GITHUB_OUTPUT

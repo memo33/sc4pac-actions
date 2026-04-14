@@ -12,8 +12,8 @@ inputs:
     required: true
 outputs:
   updated-files:
-    description: JSON file containing an array of paths of YAML files with updates
-    value: ${{ steps.updated-files.outputs.file }}
+    description: JSON array containing an array of paths of YAML files with updates
+    value: ${{ steps.updated-files.outputs.files_json_arr }}
   has-updates:
     description: Boolean indicating if any files have updates
     value: ${{ steps.updated-files.outputs.has_updates }}
@@ -32,14 +32,15 @@ runs:
       shell: bash
       run: |
         mkdir -p "$REPORTS_DIR"
-        (python "$GITHUB_ACTION_PATH/../../../src/check-updates.py" --save-reports="$REPORTS_DIR" "$SRC_YAML" || true) 2>&1 | tee "$RUNNER_TEMP/check-updates.log"
-        grep -oP '^\s*YAML:\s+\K.*\.yaml$' "$RUNNER_TEMP/check-updates.log" | sort | uniq > "$RUNNER_TEMP/updated-files.txt"
+        python "$GITHUB_ACTION_PATH/../../../src/check-updates.py" --no-exit-status --save-reports="$REPORTS_DIR" "$SRC_YAML" 2>&1 | tee "$RUNNER_TEMP/check-updates.log"
+        { grep -oP '^\s*YAML:\s+\K.*\.yaml$' "$RUNNER_TEMP/check-updates.log" || true; } | sort | uniq > "$RUNNER_TEMP/updated-files.txt"
         if [[ -s "$RUNNER_TEMP/updated-files.txt" ]]; then
           echo "has_updates=true" >> $GITHUB_OUTPUT
+          echo "files_json_arr=$(cat "$RUNNER_TEMP/updated-files.txt" | jq --compact-output -Rn '[inputs|select(length>0)]')" >> $GITHUB_OUTPUT
         else
           echo "has_updates=false" >> $GITHUB_OUTPUT
+          echo "files_json_arr=[]" >> $GITHUB_OUTPUT
         fi
-        echo "file=$(cat "$RUNNER_TEMP/updated-files.txt" | jq --compact-output -Rn '[inputs|select(length>0)]')" >> $GITHUB_OUTPUT
       env:
         STEX_API_KEY: ${{ inputs.stex-api-key }}
         SRC_YAML: ${{ inputs.path }}

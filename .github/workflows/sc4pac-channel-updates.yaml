@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           git fetch --prune
-          for branch in $(git branch -r | grep 'origin/update/' | sed 's|\s*origin/||'); do
+          for branch in $(git branch -r | { grep 'origin/update/' || true; } | sed 's|\s*origin/||'); do
             pr_count=$(gh pr list --head "$branch" --state open --json number -q 'length')
             if [ "$pr_count" -eq 0 ]; then
               echo "Deleting orphaned branch $branch"
@@ -111,3 +111,5 @@ jobs:
           body: ${{ steps.patch.outputs.update-log }}
           base-branch: ${{ inputs.base-branch }}
           github-token: ${{ secrets.pat }}
+    permissions:
+      pull-requests: write
