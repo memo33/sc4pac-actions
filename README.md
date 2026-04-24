@@ -78,3 +78,30 @@ For example:
 ```sh
 python ../sc4pac-actions/src/lint.py src/yaml
 ```
+
+## Auto-update workflow
+
+Optionally, add another workflow `.github/workflows/auto-update.yaml` which automatically creates pull requests to update version numbers:
+```yaml
+name: auto-update
+
+on:
+  #schedule:  # uncomment and adjust for periodic runs (stops after 2 months of inactivity)
+  #  - cron: '15 16 * * 0'  # 4:15 pm UTC on Sundays
+  workflow_dispatch:  # trigger the workflow manually from the Actions tab
+
+jobs:
+  auto-update:
+    uses: memo33/sc4pac-actions/.github/workflows/sc4pac-channel-updates.yaml@main
+    with:
+      path: src/yaml
+      api: sc4e  # sc4e,stex
+      deploy-repository: OWNER/REPO  # your GitHub repository
+    secrets:
+      stex-api-key: ${{ secrets.STEX_API_KEY }}  # remove this unless using the stex api
+      pat: ${{ secrets.SC4PAC_CHECK_UPDATES_TOKEN }}
+    permissions:
+      pull-requests: write
+```
+The personal access token `SC4PAC_CHECK_UPDATES_TOKEN` must be created for your profile under *Settings* → *Developer Settings* → *Personal Access Tokens* → *Fine-grained tokens* with correct permissions (Contents, Pull Requests).
+Afterwards, add the token to the repository: *Settings* → *Secrets and Variables* → *Actions* → *Repository secrets*.
