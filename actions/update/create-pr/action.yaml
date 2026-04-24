@@ -134,7 +134,7 @@ runs:
       if: steps.pr.outputs.pr_url != ''
       shell: bash
       run: |
-        gh pr comment "$BRANCH" --body "Ready for review. @${{ github.actor }}"
+        gh pr comment "$BRANCH" --body "Ready for review."
       env:
         GITHUB_TOKEN: ${{ github.token }}  # not the PAT
         BRANCH: ${{ inputs.branch }}
