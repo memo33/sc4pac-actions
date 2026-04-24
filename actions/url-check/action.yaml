@@ -36,4 +36,4 @@ runs:
         echo $(printf '%.s─' $(seq 1 80))  # horizontal line
         cd "dest"
         cat "$GITHUB_WORKSPACE/modified-yaml-files.txt" \
-          | xargs --delimiter '\n' python "$GITHUB_ACTION_PATH/../../src/st-check-updates.py" --mode=id
+          | xargs --delimiter '\n' python "$GITHUB_ACTION_PATH/../../src/check-updates.py" --api=stex --mode=id

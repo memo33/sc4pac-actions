@@ -10,10 +10,10 @@ inputs:
   branch:
     description: Branch name for PR
     required: true
-  name:
+  title:
     description: PR title
     required: true
-  body:
+  body-file:
     description: a file containing the PR body
     required: true
   base-branch:
@@ -97,7 +97,7 @@ runs:
         BASE_BRANCH: ${{ inputs.base-branch }}
         PATCH_FILE: ${{ inputs.patch-file }}
         YAML_PATH: ${{ inputs.path }}
-        MSG: ${{ inputs.name }}
+        MSG: ${{ inputs.title }}
     - name: Push branch
       if: steps.check-branch.outputs.exists != 'true' || steps.try-patch.outputs.patch_applied != '1'
       shell: bash
@@ -112,18 +112,13 @@ runs:
         pr_url=""
         action=""
         existing_pr=$(gh pr list --head "$BRANCH" --json url -q '.[0].url' --repo "$GITHUB_REPOSITORY")
-        body_text="$(printf 'Update for `%s`:\n```\n%s\n```\n%s' \
-                       "$YAML_PATH" \
-                       "$(cat "$BODY")" \
-                       "$( { grep -oP '^\s*\KWebsite:\s+http.*' "$BODY" || true; } | uniq)" \
-                    )"
         if [ -n "$existing_pr" ]; then
-          gh pr edit "$existing_pr" --title "$TITLE" --body "$body_text"
+          gh pr edit "$existing_pr" --title "$TITLE" --body-file "$BODY_FILE"
           pr_url="$existing_pr"
           action="update"
           echo "::notice::Updated PR for branch $BRANCH"
         else
-          pr_url=$(gh pr create --title "$TITLE" --body "$body_text" --base "$BASE_BRANCH" --head "$BRANCH" --repo "$GITHUB_REPOSITORY")
+          pr_url=$(gh pr create --title "$TITLE" --body-file "$BODY_FILE" --base "$BASE_BRANCH" --head "$BRANCH" --repo "$GITHUB_REPOSITORY")
           action="create"
           echo "::notice::Created new PR for branch $BRANCH: $pr_url"
         fi
@@ -131,16 +126,15 @@ runs:
         echo "action=$action" >> $GITHUB_OUTPUT
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
-        TITLE: ${{ inputs.name }}
-        BODY: ${{ inputs.body }}
+        TITLE: ${{ inputs.title }}
+        BODY_FILE: ${{ inputs.body-file }}
         BASE_BRANCH: ${{ inputs.base-branch }}
         BRANCH: ${{ inputs.branch }}
-        YAML_PATH: ${{ inputs.path }}
     - name: Comment on PR as github-actions bot to trigger notification
       if: steps.pr.outputs.pr_url != ''
       shell: bash
       run: |
-        gh pr comment "$BRANCH" --body "Ready for review. @${{ github.actor }}"
+        gh pr comment "$BRANCH" --body "Ready for review."
       env:
         GITHUB_TOKEN: ${{ github.token }}  # not the PAT
         BRANCH: ${{ inputs.branch }}

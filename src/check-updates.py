@@ -319,7 +319,7 @@ def sanitize_version(version):
     if not version:
         return version
     v = version.strip()
-    v = re.sub(r'^(v|version)\s*', '', v, flags=re.IGNORECASE)
+    v = re.sub(r'^(version|v)\s*', '', v, flags=re.IGNORECASE)
     v = v.replace(' ', '')
     v = re.sub(r'(\.0)+$', '', v)  # Remove trailing .0 groups (e.g. 1.0.0 -> 1, 1.2.0 -> 1.2)
     return v

@@ -10,6 +10,10 @@ on:
         description: Path to yaml sources directory (e.g. "src" or "src/yaml"), without unnecessary leading or trailing `/` characters.
         required: true
         type: string
+      api:
+        description: The exchange server API to check for updates (e.g. 'sc4e,stex' comma-separated).
+        required: true
+        type: string
       deploy-repository:
         description: The repository for deployment (to prevent deployment in forks) in the form 'OWNER/REPO'
         required: true
@@ -25,7 +29,7 @@ on:
         required: true
       stex-api-key:
         description: A private key for accessing the STEX API.
-        required: true
+        required: false
 
 jobs:
   check-updates:
@@ -43,6 +47,7 @@ jobs:
         uses: memo33/sc4pac-actions/actions/update/check-updates@main
         with:
           path: ${{ inputs.path }}
+          api: ${{ inputs.api }}
           stex-api-key: ${{ secrets.stex-api-key }}
           reports-dir: api_reports
       - name: Upload reports artifact
@@ -98,17 +103,30 @@ jobs:
         id: patch
         with:
           path: ${{ matrix.yaml-path }}
+          api: ${{ inputs.api }}
           stex-api-key: ${{ secrets.stex-api-key }}
           branch: ${{ inputs.base-branch }}
           reports-dir: ${{ format('{0}/api_reports', runner.temp) }}
+      - name: Prepare PR body
+        id: pr-body
+        run: |
+          printf 'Update for `%s`:\n```\n%s\n```\n%s' \
+            "$YAML_PATH" \
+            "$(cat "$UPDATE_LOG")" \
+            "$( { grep -oP '^\s*\KWebsite:\s+http.*' "$UPDATE_LOG" || true; } | uniq)" \
+            > "$RUNNER_TEMP/pr_body.txt"
+          echo "body=$RUNNER_TEMP/pr_body.txt" >> $GITHUB_OUTPUT
+        env:
+          UPDATE_LOG: ${{ steps.patch.outputs.update-log }}
+          YAML_PATH: ${{ matrix.yaml-path }}
       - name: Create or update PR
         uses: memo33/sc4pac-actions/actions/update/create-pr@main
         with:
           path: ${{ matrix.yaml-path }}
           patch-file: ${{ steps.patch.outputs.patch-file }}
           branch: ${{ steps.branch.outputs.branch }}
-          name: ${{ steps.branch.outputs.title }}
-          body: ${{ steps.patch.outputs.update-log }}
+          title: ${{ steps.branch.outputs.title }}
+          body-file: ${{ steps.pr-body.outputs.body }}
           base-branch: ${{ inputs.base-branch }}
           github-token: ${{ secrets.pat }}
     permissions:

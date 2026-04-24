@@ -4,9 +4,12 @@ inputs:
   path:
     description: Source folder containing yaml files to analyze
     required: true
+  api:
+    description: The exchange server API to check for updates (e.g. 'sc4e,stex' comma-separated).
+    required: true
   stex-api-key:
     description: Required secret token for accessing the STEX API.
-    required: true
+    required: false
   reports-dir:
     description: Directory to save reports for caching
     required: true
@@ -32,7 +35,7 @@ runs:
       shell: bash
       run: |
         mkdir -p "$REPORTS_DIR"
-        python "$GITHUB_ACTION_PATH/../../../src/check-updates.py" --no-exit-status --save-reports="$REPORTS_DIR" "$SRC_YAML" 2>&1 | tee "$RUNNER_TEMP/check-updates.log"
+        python "$GITHUB_ACTION_PATH/../../../src/check-updates.py" --api=${API//,/ --api=} --no-exit-status --save-reports="$REPORTS_DIR" "$SRC_YAML" 2>&1 | tee "$RUNNER_TEMP/check-updates.log"
         { grep -oP '^\s*YAML:\s+\K.*\.yaml$' "$RUNNER_TEMP/check-updates.log" || true; } | sort | uniq > "$RUNNER_TEMP/updated-files.txt"
         if [[ -s "$RUNNER_TEMP/updated-files.txt" ]]; then
           echo "has_updates=true" >> $GITHUB_OUTPUT
@@ -42,6 +45,7 @@ runs:
           echo "files_json_arr=[]" >> $GITHUB_OUTPUT
         fi
       env:
+        API: ${{ inputs.api }}
         STEX_API_KEY: ${{ inputs.stex-api-key }}
         SRC_YAML: ${{ inputs.path }}
         REPORTS_DIR: ${{ inputs.reports-dir }}
