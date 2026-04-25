@@ -109,6 +109,7 @@ def create_schema(config):
                 "properties": {
                     "include": {"type": "string", "validate_pattern": True},
                     "sha256": {"type": "string", "validate_sha256": True},
+                    "isIni": {"type": "boolean"},
                 },
             },
             "uniqueItems": True,
