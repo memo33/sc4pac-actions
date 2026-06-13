@@ -310,6 +310,8 @@ class DependencyChecker:
         self.unknown_global_variants = {}  # variantId -> pkg
         self.ignore_nonunique_includes = set(config['ignore-nonunique-includes'])
         self.duplicate_stanzas = []  # (pkg1, variant1, pkg2, variant2)
+        self.empty_includes = []  # (pkg, assetId)
+        self.empty_excludes = []  # (pkg, assetId)
 
     def aggregate_identifiers(self, doc, stanzas: set[Stanza]):
         if 'assetId' in doc:
@@ -407,6 +409,12 @@ class DependencyChecker:
                         else:
                             self.duplicate_stanzas.append(p2v2 + (pkg, variant))
 
+            for asset in doc.get('assets', []):
+                if self._has_bad_empty_includes_excludes(asset, 'include'):
+                    self.empty_includes.append((pkg, asset.get('assetId')))
+                if self._has_bad_empty_includes_excludes(asset, 'exclude'):
+                    self.empty_excludes.append((pkg, asset.get('assetId')))
+
             num_doc_assets = len(doc.get('assets', []))
             if num_doc_assets <= 1:
                 single_assets = set(asset_ids(doc))
@@ -486,6 +494,18 @@ class DependencyChecker:
                 if num_defaults > 1:
                     self.duplicate_default_variants.append((pkg, variant_id))
 
+    def _has_bad_empty_includes_excludes(self, asset, attribute):
+        # detect unintentional includes/excludes that match everything
+        incl = asset.get(attribute)
+        incl_empty = incl is not None and len(incl) == 0
+        if incl_empty:
+            return True
+        for cond_variant in asset.get('withConditions', []):
+            incl_cond = cond_variant.get(attribute)
+            incl_cond_empty = incl_cond is not None and len(incl_cond) == 0
+            if incl_cond_empty and not incl:
+                return True
+        return False
 
     def _get_channel_contents(self, channel_url):
         import urllib.request
@@ -884,6 +904,10 @@ def main() -> int:
                          if tup[1] or tup[3] else
                          "The packages {0!r} and {2!r} seem to install the _same_ files, unintentionally."
                      ).format(*tup))
+        basic_report(dict.fromkeys(dependency_checker.empty_includes), "The following packages have empty 'include: []' patterns, which match everything and are likely unintentional:",
+                     lambda tup: "Package {0!r} with asset {1!r}".format(*tup))
+        basic_report(dict.fromkeys(dependency_checker.empty_excludes), "The following packages have empty 'exclude: []' patterns, which exclude nothing and might be unintentional (TODO: This rule might be too strict!):",
+                     lambda tup: "Package {0!r} with asset {1!r}".format(*tup))
 
     if errors > 0:
         print(f"Finished with {errors} errors.")
