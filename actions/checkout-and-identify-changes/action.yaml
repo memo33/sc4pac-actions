@@ -21,6 +21,7 @@ runs:
         fetch-depth: 0
         persist-credentials: false
         path: ${{ github.event_name != 'pull_request_target' && format('{0}', inputs.destination) || 'tmp_old-tree' }}
+        allow-unsafe-pr-checkout: true
         sparse-checkout: |
           ${{ inputs.path }}
     - name: Checkout pull request
@@ -32,6 +33,7 @@ runs:
         # As merge_commit_sha is not up-to-date due to mergeability check, we use actual PR head for now; see https://github.com/actions/checkout/issues/518#issuecomment-1757453837
         # (This merge might correspond to a newer commit than the one that triggered this workflow, in case the PR was updated in the meantime -> ok)
         ref: ${{ format('refs/pull/{0}/merge', github.event.pull_request.number) }}
+        allow-unsafe-pr-checkout: true
         path: ${{ inputs.destination }}
         sparse-checkout: |
           ${{ inputs.path }}

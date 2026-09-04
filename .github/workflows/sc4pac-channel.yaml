@@ -59,6 +59,7 @@ jobs:
         # As merge_commit_sha is not up-to-date due to mergeability check, we use actual PR head for now; see https://github.com/actions/checkout/issues/518#issuecomment-1757453837
         # (This merge might correspond to a newer commit than the one that triggered this workflow, in case the PR was updated in the meantime -> ok)
         ref: ${{ github.event_name == 'pull_request_target' && format('refs/pull/{0}/merge', github.event.pull_request.number) || '' }}
+        allow-unsafe-pr-checkout: true
         sparse-checkout: |
           ${{ inputs.path }}
     - name: Install sc4pac-lint
