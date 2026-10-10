@@ -40,6 +40,16 @@ on:
         required: false
         type: boolean
         default: false
+      skip-pages-upload:
+        description: >-
+          Skip upload and deployment to GitHub Pages. Instead, pass the built channel contents back to the calling workflow as an artifact for further processing (e.g. creating a coverage report).
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      pages-artifact-name:
+        description: Name of the artifact containing the built pages directory. Only set if `skip-pages-upload` is enabled.
+        value: ${{ jobs.deploy.outputs.pages-artifact-name }}
     secrets:
       stex-api-key:
         description: A private key for accessing the STEX API.
@@ -98,6 +108,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    outputs:
+      pages-artifact-name: ${{ inputs.skip-pages-upload && 'channel-pages' || '' }}
     # Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
     # However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
     concurrency:
@@ -117,14 +129,25 @@ jobs:
         sc4pac-tools-submodule: ${{ inputs.sc4pac-tools-submodule }}
         channel-label: ${{ inputs.channel-label }}
         metadata-source-url: ${{ format('https://github.com/{0}/blob/{1}/{2}/', github.repository, github.event.repository.default_branch, inputs.path) }}
+    - name: Upload built pages as intermediate artifact
+      id: upload-intermediate
+      if: ${{ inputs.skip-pages-upload }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: channel-pages
+        path: 'tmp_gh-pages'
+        if-no-files-found: error
     - name: Setup Pages
+      if: ${{ !inputs.skip-pages-upload }}
       uses: actions/configure-pages@v4
     - name: Upload artifact
+      if: ${{ !inputs.skip-pages-upload }}
       # note that this action dereferences our `latest` symlinks, but that's not a huge problem, it just duplicates each json file (could maybe be avoided by using tar)
       uses: actions/upload-pages-artifact@v3
       with:
         path: 'tmp_gh-pages'
     - name: Deploy to GitHub Pages
+      if: ${{ !inputs.skip-pages-upload }}
       id: deployment
       uses: actions/deploy-pages@v4
     permissions:
