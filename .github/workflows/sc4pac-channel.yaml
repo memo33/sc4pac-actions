@@ -139,17 +139,17 @@ jobs:
         if-no-files-found: error
     - name: Setup Pages
       if: ${{ !inputs.skip-pages-upload }}
-      uses: actions/configure-pages@v4
+      uses: actions/configure-pages@v6
     - name: Upload artifact
       if: ${{ !inputs.skip-pages-upload }}
       # note that this action dereferences our `latest` symlinks, but that's not a huge problem, it just duplicates each json file (could maybe be avoided by using tar)
-      uses: actions/upload-pages-artifact@v3
+      uses: actions/upload-pages-artifact@v5
       with:
         path: 'tmp_gh-pages'
     - name: Deploy to GitHub Pages
       if: ${{ !inputs.skip-pages-upload }}
       id: deployment
-      uses: actions/deploy-pages@v4
+      uses: actions/deploy-pages@v5
     permissions:
       pages: write
       id-token: write
