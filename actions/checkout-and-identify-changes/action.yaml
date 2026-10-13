@@ -57,7 +57,7 @@ runs:
         echo "Found $(wc -l < "$RUNNER_TEMP/modified-yaml-files.txt") modified YAML files."
 
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: '3.x'
     - name: Install dependencies

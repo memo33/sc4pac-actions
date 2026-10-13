@@ -39,7 +39,7 @@ jobs:
       updated-files: ${{ steps.check.outputs.updated-files }}
       has-updates: ${{ steps.check.outputs.has-updates }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: true
           token: ${{ secrets.pat }}
@@ -51,7 +51,7 @@ jobs:
           stex-api-key: ${{ secrets.stex-api-key }}
           reports-dir: api_reports
       - name: Upload reports artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports.zip
           path: api_reports/
@@ -79,11 +79,11 @@ jobs:
       matrix:
         yaml-path: ${{ fromJson(needs.check-updates.outputs.updated-files) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Download reports artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: reports.zip
           path: ${{ format('{0}/api_reports', runner.temp) }}

@@ -81,7 +81,7 @@ runs:
       # Hence, changing an assetId does not invalidate the cache, but changing an asset version or URL triggers a redownload.
     - name: Restore the download cache
       id: restore-cache
-      uses: actions/cache/restore@v5
+      uses: actions/cache/restore@v6
       with:
         key: sc4pac-download-cache-${{ steps.get-assets-list.outputs.cache_key }}
         path: ${{ inputs.sc4pac-cache }}
@@ -92,7 +92,7 @@ runs:
       env:
         SC4PAC_SIMTROPOLIS_TOKEN: ${{ inputs.sc4pac-simtropolis-token }}
         # enforce ANSI colors with GH actions:
-        SC4PAC_JAVA_OPTIONS: '-Djansi.mode=force'
+        SC4PAC_JAVA_OPTIONS: '-Djansi.mode=force -XX:+IgnoreUnrecognizedVMOptions --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED'
         PKGS_LIST: ${{ inputs.packages-list }}
       run: |
         cat "$PKGS_LIST" \
@@ -100,7 +100,7 @@ runs:
 
     - name: Save the download cache
       if: steps.restore-cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v5
+      uses: actions/cache/save@v6
       with:
         key: ${{ steps.restore-cache.outputs.cache-primary-key }}
         path: ${{ inputs.sc4pac-cache }}
@@ -110,7 +110,7 @@ runs:
       env:
         SC4PAC_SIMTROPOLIS_TOKEN: ${{ inputs.sc4pac-simtropolis-token }}
         # enforce ANSI colors with GH actions:
-        SC4PAC_JAVA_OPTIONS: '-Djansi.mode=force'
+        SC4PAC_JAVA_OPTIONS: '-Djansi.mode=force -XX:+IgnoreUnrecognizedVMOptions --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED'
         PKGS_LIST: ${{ inputs.packages-list }}
       run: |
         cat "$PKGS_LIST" \

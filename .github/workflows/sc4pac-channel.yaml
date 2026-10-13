@@ -97,7 +97,7 @@ jobs:
         channel-label: ${{ inputs.channel-label }}
         metadata-source-url: ${{ format('https://github.com/{0}/blob/{1}/{2}/', github.repository, github.event.repository.default_branch, inputs.path) }}
     - name: Upload channel artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.channel-artifact-name }}
         path: ${{ runner.temp }}/tmp_channel
@@ -195,7 +195,7 @@ jobs:
         sc4pac-tools-submodule: ${{ inputs.sc4pac-tools-submodule }}
         pages-output-path: ${{ runner.temp }}/tmp_gh-pages
     - name: Upload website artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: website-artifact.zip
         path: ${{ runner.temp }}/tmp_gh-pages
@@ -227,12 +227,12 @@ jobs:
     steps:
     - name: Download website artifact
       if: ${{ needs.build-website.result != 'skipped' }}
-      uses: actions/download-artifact@v5
+      uses: actions/download-artifact@v8
       with:
         name: website-artifact.zip
         path: ${{ runner.temp }}/gh-pages
     - name: Download channel artifact
-      uses: actions/download-artifact@v5
+      uses: actions/download-artifact@v8
       with:
         name: ${{ inputs.channel-artifact-name }}
         path: ${{ runner.temp }}/gh-pages/channel

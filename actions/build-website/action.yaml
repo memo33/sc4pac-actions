@@ -12,10 +12,10 @@ inputs:
 runs:
   using: composite
   steps:
-  - name: Set up JDK 21 (with sbt cache)
-    uses: actions/setup-java@v4
+  - name: Set up JDK 25 (with sbt cache)
+    uses: actions/setup-java@v6
     with:
-      java-version: '21'
+      java-version: '25'
       distribution: 'temurin'
       cache: 'sbt'
 
@@ -27,7 +27,7 @@ runs:
     env:
       SC4PAC_TOOLS: ${{ inputs.sc4pac-tools-submodule }}
 
-  - uses: actions/cache@v5
+  - uses: actions/cache@v6
     id: cache-sc4pac-website
     with:
       path: ${{ format('{0}/web/target/website/channel', inputs.sc4pac-tools-submodule) }}
