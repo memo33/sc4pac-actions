@@ -90,7 +90,7 @@ jobs:
         sparse-checkout: |
           ${{ inputs.path }}
     - name: Build channel
-      uses: memo33/sc4pac-actions/actions/build@privileges
+      uses: memo33/sc4pac-actions/actions/build/channel@privileges
       with:
         path: ${{ inputs.path }}
         output-path: ${{ runner.temp }}/tmp_channel
@@ -190,7 +190,7 @@ jobs:
         persist-credentials: false
         submodules: recursive
     - name: Build website
-      uses: memo33/sc4pac-actions/actions/build-website@privileges
+      uses: memo33/sc4pac-actions/actions/build/website@privileges
       with:
         sc4pac-tools-submodule: ${{ inputs.sc4pac-tools-submodule }}
         pages-output-path: ${{ runner.temp }}/tmp_gh-pages
