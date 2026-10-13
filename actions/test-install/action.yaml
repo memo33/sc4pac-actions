@@ -94,7 +94,7 @@ runs:
       run: |
         : Identify assets to download
         assets_list="$(cat "$GITHUB_WORKSPACE/modified-packages.txt" \
-          | xargs --delimiter '\n' sc4pac test --yes --list-assets \
+          | xargs --delimiter '\n' sc4pac test --yes --list-assets -- \
           | { grep '^\S' || true; } )"
         echo "$assets_list"
         echo "cache_key=$(echo "$assets_list" | cut -d ' ' -f 2- | sort | sha256sum | head -c 12)" >> $GITHUB_OUTPUT
@@ -118,7 +118,7 @@ runs:
       run: |
         : Download assets
         cat "$GITHUB_WORKSPACE/modified-packages.txt" \
-          | xargs --delimiter '\n' sc4pac test --yes --download-only
+          | xargs --delimiter '\n' sc4pac test --yes --download-only --
 
     - name: Save the download cache
       if: steps.restore-cache.outputs.cache-hit != 'true'
@@ -136,7 +136,7 @@ runs:
       run: |
         : Test installing modified packages
         cat "$GITHUB_WORKSPACE/modified-packages.txt" \
-          | xargs --delimiter '\n' sc4pac test --yes --output "tmp_build/plugins"
+          | xargs --delimiter '\n' sc4pac test --yes --output "tmp_build/plugins" --
 
     - name: List installed files
       shell: bash
