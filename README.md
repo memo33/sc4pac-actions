@@ -18,7 +18,7 @@ on:
 
 jobs:
   channel:
-    uses: memo33/sc4pac-actions/.github/workflows/sc4pac-channel.yaml@main
+    uses: memo33/sc4pac-actions/.github/workflows/sc4pac-channel.yaml@v1
     with:
       path: src                      # path to yaml source files, e.g. src/yaml
       channel-label: Owner           # your name or other suitable label
@@ -92,7 +92,7 @@ on:
 
 jobs:
   auto-update:
-    uses: memo33/sc4pac-actions/.github/workflows/sc4pac-channel-updates.yaml@main
+    uses: memo33/sc4pac-actions/.github/workflows/sc4pac-channel-updates.yaml@v1
     with:
       path: src/yaml
       api: sc4e  # sc4e,stex
