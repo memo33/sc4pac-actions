@@ -13,7 +13,7 @@ name: sc4pac CI
 on:
   push:
     branches: [ "main" ]
-  pull_request_target:
+  pull_request:
     branches: [ "main" ]
 
 jobs:
@@ -23,14 +23,42 @@ jobs:
       path: src                      # path to yaml source files, e.g. src/yaml
       channel-label: Owner           # your name or other suitable label
       deploy-repository: OWNER/REPO  # your GitHub repository
-      use-stex-api: false            # optionally enable the STEX API calls if you have a private key
-      skip-test: true                # optionally skip the `test` step
-    #secrets:
-    #  stex-api-key: ${{ secrets.STEX_API_KEY }}  # set the STEX_API_KEY under: Settings > Secrets and variables > Actions > Repository secrets
-    #  sc4pac-simtropolis-token: ${{ secrets.SC4PAC_SIMTROPOLIS_TOKEN }}  # set the SC4PAC_SIMTROPOLIS_TOKEN for downloading files during `test`
+      skip-test: false               # optionally skip the test job
+      skip-url-check: false          # optionally skip the url-check
+      skip-deploy: false             # optionally skip deployment
     permissions:
       pages: write                   # to deploy to GitHub Pages
       id-token: write                # to verify the deployment originates from an appropriate source
+      checks: write                  # to create placeholder checks for the subsequent sc4pac-test workflow
+```
+(For more detailed input and output arguments, see `.github/workflows/sc4pac-channel.yaml`.)
+
+Additionally, unless `skip-test` and `skip-url-check` are true, create a second workflow `.github/workflows/sc4pac-test.yaml` in your repository:
+```yaml
+name: sc4pac-test
+
+on:
+  workflow_run:
+    workflows: ["sc4pac CI"]
+    types:
+      - completed
+
+jobs:
+  channel-proxy:
+    uses: memo33/sc4pac-actions/.github/workflows/sc4pac-privileged.yaml@main
+    with:
+      workflow-run-id: ${{ github.event.workflow_run.id }}
+      skip-test: false               # optionally skip the test job
+      skip-url-check: false          # optionally skip the url-check
+    #secrets:
+    #  # The secrets are needed if the channel contains STEX files.
+    #  # Configure them under: Settings > Secrets and variables > Actions > Repository secrets.
+    #  # The `SC4PAC_SIMTROPOLIS_TOKEN` is used by `test`, the `STEX_API_KEY` by `url-check`.
+    #  sc4pac-simtropolis-token: ${{ secrets.SC4PAC_SIMTROPOLIS_TOKEN }}
+    #  stex-api-key: ${{ secrets.STEX_API_KEY }}
+    permissions:
+      contents: read                 # to access previous workflow run
+      checks: write                  # to show the test results on the original commit
 ```
 
 Also create a `lint-config.yaml` in the top-level directory of your repository:

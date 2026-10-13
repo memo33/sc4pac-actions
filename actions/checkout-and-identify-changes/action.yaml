@@ -1,7 +1,7 @@
 name: checkout-and-identify-changes
 description: >-
   Compares two commits to find modified yaml files.
-  The resulting list of modified/added files is written to `modified-yaml-files.txt`.
+  The resulting list of modified/added files is written to the file `outputs.files-list`.
 
 inputs:
   path:
@@ -10,59 +10,66 @@ inputs:
   destination:
     description: Relative destination folder to which the files of the newer commit are checked out.
     required: true
-outputs: {}
+outputs:
+  modified-files-list:
+    description: A file containing the names of modified yaml files (newline-separated).
+    value: ${{ format('{0}/modified-yaml-files.txt', runner.temp) }}
+  modified-packages-list:
+    description: A file containing the names of modified packages (newline-separated).
+    value: ${{ format('{0}/modified-packages.txt', runner.temp) }}
 
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
-        # to allow diff of other commit
-        fetch-depth: 0
+        fetch-depth: 0  # to allow diff of other commit
         persist-credentials: false
-        path: ${{ github.event_name != 'pull_request_target' && format('{0}', inputs.destination) || 'tmp_old-tree' }}
-        allow-unsafe-pr-checkout: true
-        sparse-checkout: |
-          ${{ inputs.path }}
-    - name: Checkout pull request
-      if: ${{ github.event_name == 'pull_request_target' }}
-      uses: actions/checkout@v6
-      with:
-        persist-credentials: false
-        # For pull_request_target:
-        # As merge_commit_sha is not up-to-date due to mergeability check, we use actual PR head for now; see https://github.com/actions/checkout/issues/518#issuecomment-1757453837
-        # (This merge might correspond to a newer commit than the one that triggered this workflow, in case the PR was updated in the meantime -> ok)
-        ref: ${{ format('refs/pull/{0}/merge', github.event.pull_request.number) }}
-        allow-unsafe-pr-checkout: true
         path: ${{ inputs.destination }}
         sparse-checkout: |
           ${{ inputs.path }}
-    - name: Identify modified YAML files (pull_request_target)
-      if: ${{ github.event_name == 'pull_request_target' }}
+    - name: Identify modified YAML files (pull_request)
+      if: ${{ github.event_name == 'pull_request' }}
       shell: bash
       env:
         SRC_YAML: ${{ inputs.path }}
         DEST: ${{ inputs.destination }}
-      # We checked out PR into `DEST` and main base commit into `tmp_old-tree`.
+      # We checked out PR merge-commit into `DEST`.
       run: |
-        : Identify modified YAML files
         cd "$DEST"
-        (git diff --no-index --diff-filter=d --name-only "$GITHUB_WORKSPACE/tmp_old-tree/$SRC_YAML" "$SRC_YAML" || true) > "$GITHUB_WORKSPACE/modified-yaml-files.txt"
+        git diff --diff-filter=d --name-only @^ -- "$SRC_YAML" > "$RUNNER_TEMP/modified-yaml-files.txt"
     - name: Identify modified YAML files (push)
-      if: ${{ github.event_name != 'pull_request_target' }}
+      if: ${{ github.event_name != 'pull_request' }}
       shell: bash
       env:
         SRC_YAML: ${{ inputs.path }}
         PREVIOUS_COMMIT: ${{ github.event.before }}
         DEST: ${{ inputs.destination }}
       # TODO This is not perfect yet, as `before` does not exist on new branches or forced pushes.
+      # Consider comparing to merge-base with default branch as fallback.
       run: |
-        : Identify modified YAML files
         cd "$DEST"
-        git diff --diff-filter=d --name-only "$PREVIOUS_COMMIT" -- "$SRC_YAML" > "$GITHUB_WORKSPACE/modified-yaml-files.txt"
+        git diff --diff-filter=d --name-only "$PREVIOUS_COMMIT" -- "$SRC_YAML" > "$RUNNER_TEMP/modified-yaml-files.txt"
     - name: List modified YAML files
       shell: bash
       run: |
-        : List modified YAML files
-        cat "$GITHUB_WORKSPACE/modified-yaml-files.txt"
-        echo "Found $(wc -l < "$GITHUB_WORKSPACE/modified-yaml-files.txt") modified YAML files."
+        cat "$RUNNER_TEMP/modified-yaml-files.txt"
+        echo "Found $(wc -l < "$RUNNER_TEMP/modified-yaml-files.txt") modified YAML files."
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+    - name: Install dependencies
+      shell: bash
+      run: python -m pip install --upgrade PyYAML jsonschema python-dateutil
+    - name: Identify modified packages
+      shell: bash
+      env:
+        DEST: ${{ inputs.destination }}
+      run: |
+        cd "$DEST"
+        cat "$RUNNER_TEMP/modified-yaml-files.txt" \
+          | xargs --delimiter '\n' python "$GITHUB_ACTION_PATH/../../src/list-packages.py" > "$RUNNER_TEMP/modified-packages.txt"
+        cat "$RUNNER_TEMP/modified-packages.txt"
+        echo "Found $(wc -l < "$RUNNER_TEMP/modified-packages.txt") modified packages."

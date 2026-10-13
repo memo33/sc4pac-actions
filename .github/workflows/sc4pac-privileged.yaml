@@ -1,0 +1,294 @@
+name: sc4pac-privileged
+description: |-
+  Reusable workflow of privileged sc4pac channel actions such as running tests with access to STEX tokens.
+  Supported workflow triggers: 'workflow_run'.
+  The workflow runs in the context of the default branch, without checking out or executing code from a pull request.
+
+on:
+  workflow_call:
+    inputs:
+      workflow-run-id:
+        description: >-
+          The workflow run ID `github.event.workflow_run.id` of the workflow that triggered the calling workflow.
+          This is used to access the head sha and other metadata.
+        required: true
+        type: string
+      channel-artifact-name:
+        description: Optionally, a custom name for the intermediate channel artifact.
+        required: false
+        type: string
+        default: channel-artifact.zip
+      test-only-PRs:
+        description: Do not run the test job on ordinary branch updates, but only on PRs. Only enable this if you do sufficient testing locally.
+        required: false
+        type: boolean
+        default: false
+      skip-test:
+        description: Whether to skip the test job.
+        required: false
+        type: boolean
+        default: false
+      skip-url-check:
+        description: Whether to skip the url-check job, as it requires a custom `STEX_API_KEY`.
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      stex-api-key:
+        description: A private key for accessing the STEX API.
+        required: false
+      sc4pac-simtropolis-token:
+        description: A private token for downloading STEX files.
+        required: false
+
+# Note that downloaded artifacts must be treated as untrusted data and should not be executed, as they come from an untrusted workflow run.
+jobs:
+  test:
+    if: ${{ !inputs.skip-test }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Find the check run created by the original workflow
+        id: locate
+        uses: actions/github-script@v9
+        env:
+          RUN_ID: ${{ inputs.workflow-run-id }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # REST API documentation:
+          # https://octokit.github.io/rest.js/ (for Javascript function names)
+          # https://docs.github.com/en/rest (for parameters and response specification)
+          script: |
+            const { data: workflowRun } = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: Number(process.env.RUN_ID),
+            });
+            core.notice(`The \`test\` job was triggered by this workflow run: ${workflowRun.html_url}`);
+            core.setOutput("workflow_run_event", workflowRun.event);
+
+            const { data } = await github.rest.checks.listForSuite({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_suite_id: workflowRun.check_suite_id,
+              // TODO consider using pagination
+            });
+
+            const checkRun = data.check_runs.find(run =>
+              run.name === "test" &&
+              run.head_sha === workflowRun.head_sha
+            );
+
+            if (!checkRun) {
+              core.warning(`No matching \`test\` check run found in workflow run's check suite. Usually this means that the triggering workflow failed, so tests are skipped here. See ${workflowRun.html_url}.`);
+              return;
+            }
+
+            core.setOutput("check_run_id", String(checkRun.id));
+            console.log("Found check run:", checkRun.id);
+
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: checkRun.id,
+              details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              output: {
+                title: "Test",
+                summary: "Test are running...",
+                text: `View logs: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+              }
+            });
+
+      - name: Determine whether tests should be skipped
+        id: skip-check
+        env:
+          SHOULD_SKIP_TEST: ${{ steps.locate.outputs.check_run_id == '' || inputs.test-only-PRs == true && steps.locate.outputs.workflow_run_event != 'pull_request' }}
+        run: echo "should-skip-test=$SHOULD_SKIP_TEST" >> "$GITHUB_OUTPUT"
+
+      - name: Extract built channel files
+        if: ${{ steps.skip-check.outputs.should-skip-test == 'false' }}
+        uses: actions/download-artifact@v5
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.workflow-run-id }}
+          name: ${{ inputs.channel-artifact-name }}
+          path: ${{ runner.temp }}/untrusted-data/channel
+
+      - name: Retrieve list of modified packages
+        if: ${{ steps.skip-check.outputs.should-skip-test == 'false' }}
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.workflow-run-id }}
+          name: modified-packages-artifact
+          path: ${{ runner.temp }}/untrusted-data/list
+
+      - name: Check that modified packages list is not empty
+        id: empty-check
+        if: ${{ steps.skip-check.outputs.should-skip-test == 'false' }}
+        run: |
+          if [ ! -s "$RUNNER_TEMP/untrusted-data/list/modified-packages.txt" ]; then
+            echo "::warning::Found no modified packages to test. Skipping test."
+            echo "no-pkgs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no-pkgs=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Test installing modified packages
+        id: test-step
+        if: ${{ steps.skip-check.outputs.should-skip-test == 'false' && steps.empty-check.outputs.no-pkgs == 'false' }}
+        uses: memo33/sc4pac-actions/actions/test-install@privileges
+        with:
+          channel-path: ${{ runner.temp }}/untrusted-data/channel
+          packages-list: ${{ runner.temp }}/untrusted-data/list/modified-packages.txt
+          sc4pac-simtropolis-token: ${{ secrets.sc4pac-simtropolis-token }}
+
+      - name: Finish check run
+        if: always() && steps.locate.outputs.check_run_id != ''
+        uses: actions/github-script@v9
+        env:
+          # The test outcome will also be `skipped` if an earlier step fails,
+          # but in that case we want to report a failure as test result, so we
+          # use `TEST_SKIPPED` using the same logic as for the test-step.
+          TEST_OUTCOME: ${{ steps.test-step.outcome }}
+          TEST_SKIPPED: ${{ steps.skip-check.outputs.should-skip-test == 'true' || steps.empty-check.outputs.no-pkgs == 'true' }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const conclusion =
+              process.env.TEST_OUTCOME === "success" ? "success" :
+              process.env.TEST_SKIPPED === "true" ? "skipped" : "failure";
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: Number("${{ steps.locate.outputs.check_run_id }}"),
+              status: "completed",
+              conclusion,
+              completed_at: new Date().toISOString(),
+              details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              output: {
+                title: "Test",
+                summary: `Result: \`${conclusion}\``,
+                text: `View logs: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+              }
+            });
+
+  url-check:
+    if: ${{ !inputs.skip-url-check }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Find the check run created by the original workflow
+        id: locate
+        uses: actions/github-script@v9
+        env:
+          RUN_ID: ${{ inputs.workflow-run-id }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # REST API documentation:
+          # https://octokit.github.io/rest.js/ (for Javascript function names)
+          # https://docs.github.com/en/rest (for parameters and response specification)
+          script: |
+            const { data: workflowRun } = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: Number(process.env.RUN_ID),
+            });
+            core.notice(`The \`url-check\` job was triggered by this workflow run: ${workflowRun.html_url}`);
+            core.setOutput("workflow_run_event", workflowRun.event);
+
+            const { data } = await github.rest.checks.listForSuite({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_suite_id: workflowRun.check_suite_id,
+              // TODO consider using pagination
+            });
+
+            const checkRun = data.check_runs.find(run =>
+              run.name === "url-check" &&
+              run.head_sha === workflowRun.head_sha
+            );
+
+            if (!checkRun) {
+              core.warning(`No matching \`url-check\` check run found in workflow run's check suite. Usually this means that the triggering workflow failed, so tests are skipped here. See ${workflowRun.html_url}.`);
+              return;
+            }
+
+            core.setOutput("check_run_id", String(checkRun.id));
+            console.log("Found check run:", checkRun.id);
+
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: checkRun.id,
+              details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              output: {
+                title: "URL Check",
+                summary: "URL check is running...",
+                text: `View logs: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+              }
+            });
+
+      - name: Determine whether tests should be skipped
+        id: skip-check
+        env:
+          SHOULD_SKIP_TEST: ${{ steps.locate.outputs.check_run_id == '' }}
+        run: echo "should-skip-test=$SHOULD_SKIP_TEST" >> "$GITHUB_OUTPUT"
+
+      - name: Retrieve modified yaml files
+        if: ${{ steps.skip-check.outputs.should-skip-test == 'false' }}
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.workflow-run-id }}
+          name: modified-yaml-files.tar.gz
+          path: ${{ runner.temp }}/untrusted-data
+          skip-decompress: true
+
+      - name: Extract modified yaml files
+        if: ${{ steps.skip-check.outputs.should-skip-test == 'false' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/untrusted-data/modified-yaml-files"
+          tar -xzf "$RUNNER_TEMP/untrusted-data/modified-yaml-files.tar.gz" -C "$RUNNER_TEMP/untrusted-data/modified-yaml-files"
+
+      - name: Run url-check  # requires STEX_API_KEY
+        if: ${{ steps.skip-check.outputs.should-skip-test == 'false' }}
+        id: url-check-step
+        uses: memo33/sc4pac-actions/actions/url-check@privileges
+        with:
+          path: ${{ runner.temp }}/untrusted-data/modified-yaml-files
+          stex-api-key: ${{ secrets.stex-api-key }}
+
+      - name: Finish check run
+        if: always() && steps.locate.outputs.check_run_id != ''
+        uses: actions/github-script@v9
+        env:
+          # The test outcome will also be `skipped` if an earlier step fails,
+          # but in that case we want to report a failure as test result, so we
+          # use `TEST_SKIPPED` using the same logic as for the url-check-step.
+          TEST_OUTCOME: ${{ steps.url-check-step.outcome }}
+          TEST_SKIPPED: ${{ steps.skip-check.outputs.should-skip-test == 'true' }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const conclusion =
+              process.env.TEST_OUTCOME === "success" ? "success" :
+              process.env.TEST_SKIPPED === "true" ? "skipped" : "failure";
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: Number("${{ steps.locate.outputs.check_run_id }}"),
+              status: "completed",
+              conclusion,
+              completed_at: new Date().toISOString(),
+              details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              output: {
+                title: "URL Check",
+                summary: `Result: \`${conclusion}\``,
+                text: `View logs: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+              }
+            });

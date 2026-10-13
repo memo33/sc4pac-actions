@@ -1,0 +1,54 @@
+name: build-website
+description: Build the sc4pac website (documentation, etc.) for the main channel
+
+inputs:
+  sc4pac-tools-submodule:
+    description: This is the relative path to a pinned sc4pac-tools submodule, which is used to build the website.
+    required: true
+  pages-output-path:
+    description: Path to output folder containing the generated website files (without the channel json files, which need to be built separately).
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - name: Set up JDK 21 (with sbt cache)
+    uses: actions/setup-java@v4
+    with:
+      java-version: '21'
+      distribution: 'temurin'
+      cache: 'sbt'
+
+  - name: Get sc4pac-tools submodule info
+    id: get-submodule-info
+    shell: bash
+    run: |
+      echo "sha_short=$(git rev-parse --short=8 @:"$SC4PAC_TOOLS")" >> $GITHUB_OUTPUT
+    env:
+      SC4PAC_TOOLS: ${{ inputs.sc4pac-tools-submodule }}
+
+  - uses: actions/cache@v5
+    id: cache-sc4pac-website
+    with:
+      path: ${{ format('{0}/web/target/website/channel', inputs.sc4pac-tools-submodule) }}
+      key: sc4pac-website-scalajs-${{ steps.get-submodule-info.outputs.sha_short }}-${{ runner.os }}
+
+  - uses: sbt/setup-sbt@v1
+    if: ${{ steps.cache-sc4pac-website.outputs.cache-hit != 'true' }}
+  - name: Build website
+    if: ${{ steps.cache-sc4pac-website.outputs.cache-hit != 'true' }}
+    shell: bash
+    run: |
+      (cd "$SC4PAC_TOOLS" && ./src/scripts/build-channel-page.sh)
+    env:
+      SC4PAC_TOOLS: ${{ inputs.sc4pac-tools-submodule }}
+
+  - name: Combine website and docs
+    shell: bash
+    run: |
+      mkdir -p "$PAGES/channel"
+      cp -p "$SC4PAC_TOOLS/web/target/website/channel"/* "$PAGES/channel/"
+      cp -pr docs/. "$PAGES"
+    env:
+      SC4PAC_TOOLS: ${{ inputs.sc4pac-tools-submodule }}
+      PAGES: ${{ inputs.pages-output-path }}
