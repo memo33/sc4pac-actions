@@ -7,19 +7,8 @@ description: |-
 on:
   workflow_call:
     inputs:
-      workflow-run-id:
-        description: >-
-          The workflow run ID `github.event.workflow_run.id` of the workflow that triggered the calling workflow.
-          This is used to access the head sha and other metadata.
-        required: true
-        type: string
-      channel-artifact-name:
-        description: Optionally, a custom name for the intermediate channel artifact.
-        required: false
-        type: string
-        default: channel-artifact.zip
       test-only-PRs:
-        description: Do not run the test job on ordinary branch updates, but only on PRs. Only enable this if you do sufficient testing locally.
+        description: Do not run the test job on ordinary branch updates, but only on PRs. Only enable this if you do sufficient testing locally, or if everything goes through PRs.
         required: false
         type: boolean
         default: false
@@ -33,6 +22,18 @@ on:
         required: false
         type: boolean
         default: true
+      workflow-run-id:
+        description: >-
+          The workflow run ID of the workflow that triggered the calling workflow.
+          This is used to access the head sha and other metadata.
+        required: false
+        type: string
+        default: ${{ github.event.workflow_run.id }}
+      channel-artifact-name:
+        description: Optionally, a custom name for the intermediate channel artifact.
+        required: false
+        type: string
+        default: channel-artifact.zip
     secrets:
       stex-api-key:
         description: A private key for accessing the STEX API.

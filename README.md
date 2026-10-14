@@ -47,7 +47,6 @@ jobs:
   channel-proxy:
     uses: memo33/sc4pac-actions/.github/workflows/sc4pac-privileged.yaml@v2
     with:
-      workflow-run-id: ${{ github.event.workflow_run.id }}
       skip-test: false               # optionally skip the test job
       skip-url-check: false          # optionally skip the url-check
     #secrets:
