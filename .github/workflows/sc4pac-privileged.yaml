@@ -140,7 +140,7 @@ jobs:
       - name: Test installing modified packages
         id: test-step
         if: ${{ steps.skip-check.outputs.should-skip-test == 'false' && steps.empty-check.outputs.no-pkgs == 'false' }}
-        uses: memo33/sc4pac-actions/actions/test-install@privileges
+        uses: memo33/sc4pac-actions/actions/test-install@v2
         with:
           channel-path: ${{ runner.temp }}/untrusted-data/channel
           packages-list: ${{ runner.temp }}/untrusted-data/list/modified-packages.txt
@@ -219,7 +219,7 @@ jobs:
       - name: Run url-check  # requires STEX_API_KEY
         if: ${{ steps.skip-check.outputs.should-skip-test == 'false' }}
         id: test-step
-        uses: memo33/sc4pac-actions/actions/url-check@privileges
+        uses: memo33/sc4pac-actions/actions/url-check@v2
         with:
           path: ${{ runner.temp }}/untrusted-data/modified-yaml-files
           stex-api-key: ${{ secrets.stex-api-key }}

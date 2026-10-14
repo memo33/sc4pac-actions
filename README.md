@@ -18,7 +18,7 @@ on:
 
 jobs:
   channel:
-    uses: memo33/sc4pac-actions/.github/workflows/sc4pac-channel.yaml@main
+    uses: memo33/sc4pac-actions/.github/workflows/sc4pac-channel.yaml@v2
     with:
       path: src                      # path to yaml source files, e.g. src/yaml
       channel-label: Owner           # your name or other suitable label
@@ -45,7 +45,7 @@ on:
 
 jobs:
   channel-proxy:
-    uses: memo33/sc4pac-actions/.github/workflows/sc4pac-privileged.yaml@main
+    uses: memo33/sc4pac-actions/.github/workflows/sc4pac-privileged.yaml@v2
     with:
       workflow-run-id: ${{ github.event.workflow_run.id }}
       skip-test: false               # optionally skip the test job
@@ -120,7 +120,7 @@ on:
 
 jobs:
   auto-update:
-    uses: memo33/sc4pac-actions/.github/workflows/sc4pac-channel-updates.yaml@main
+    uses: memo33/sc4pac-actions/.github/workflows/sc4pac-channel-updates.yaml@v2
     with:
       path: src/yaml
       api: sc4e  # sc4e,stex

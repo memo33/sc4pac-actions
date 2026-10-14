@@ -63,7 +63,7 @@ runs:
         distribution: 'temurin'
 
     - name: Install sc4pac
-      uses: memo33/sc4pac-actions/actions/setup-sc4pac@privileges
+      uses: memo33/sc4pac-actions/actions/setup-sc4pac@v2
 
     - name: Identify assets to download
       shell: bash
