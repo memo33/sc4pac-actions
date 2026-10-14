@@ -124,17 +124,19 @@ jobs:
     - name: Create pending check for test job
       if: ${{ !inputs.skip-test }}
       uses: actions/github-script@v9
+      env:
+        NAME: test
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
+        script: &create-pending-check-run-script |
           const res = await github.rest.checks.create({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            name: "test",
+            name: process.env.NAME,
             head_sha: "${{ github.event.pull_request.head.sha || github.sha }}",
             status: "in_progress",
             output: {
-              title: "Test",
+              title: process.env.NAME,
               summary: "Waiting for test results..."
             }
           });
@@ -157,20 +159,11 @@ jobs:
     - name: Create pending check for url-check job
       if: ${{ !inputs.skip-url-check }}
       uses: actions/github-script@v9
+      env:
+        NAME: url-check
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const res = await github.rest.checks.create({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            name: "url-check",
-            head_sha: "${{ github.event.pull_request.head.sha || github.sha }}",
-            status: "in_progress",
-            output: {
-              title: "URL Check",
-              summary: "Waiting for url-check results..."
-            }
-          });
+        script: *create-pending-check-run-script
 
   build-website:
     needs: lint

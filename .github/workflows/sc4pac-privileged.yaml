@@ -55,18 +55,19 @@ jobs:
         uses: actions/github-script@v9
         env:
           RUN_ID: ${{ inputs.workflow-run-id }}
+          NAME: test
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # REST API documentation:
           # https://octokit.github.io/rest.js/ (for Javascript function names)
           # https://docs.github.com/en/rest (for parameters and response specification)
-          script: |
+          script: &locate-check-run-script |
             const { data: workflowRun } = await github.rest.actions.getWorkflowRun({
               owner: context.repo.owner,
               repo: context.repo.repo,
               run_id: Number(process.env.RUN_ID),
             });
-            core.notice(`The \`test\` job was triggered by this workflow run: ${workflowRun.html_url}`);
+            core.notice(`The \`${process.env.NAME}\` job was triggered by this workflow run: ${workflowRun.html_url}`);
             core.setOutput("workflow_run_event", workflowRun.event);
 
             const { data } = await github.rest.checks.listForSuite({
@@ -77,12 +78,12 @@ jobs:
             });
 
             const checkRun = data.check_runs.find(run =>
-              run.name === "test" &&
+              run.name === process.env.NAME &&
               run.head_sha === workflowRun.head_sha
             );
 
             if (!checkRun) {
-              core.warning(`No matching \`test\` check run found in workflow run's check suite. Usually this means that the triggering workflow failed, so tests are skipped here. See ${workflowRun.html_url}.`);
+              core.warning(`No matching \`${process.env.NAME}\` check run found in workflow run's check suite. Usually this means that the triggering workflow failed, so tests are skipped here. See ${workflowRun.html_url}.`);
               return;
             }
 
@@ -95,8 +96,8 @@ jobs:
               check_run_id: checkRun.id,
               details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
               output: {
-                title: "Test",
-                summary: "Test are running...",
+                title: process.env.NAME,
+                summary: "Tests are running...",
                 text: `View logs: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
               }
             });
@@ -154,9 +155,10 @@ jobs:
           # use `TEST_SKIPPED` using the same logic as for the test-step.
           TEST_OUTCOME: ${{ steps.test-step.outcome }}
           TEST_SKIPPED: ${{ steps.skip-check.outputs.should-skip-test == 'true' || steps.empty-check.outputs.no-pkgs == 'true' }}
+          NAME: test
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
+          script: &finish-check-run-script |
             const conclusion =
               process.env.TEST_OUTCOME === "success" ? "success" :
               process.env.TEST_SKIPPED === "true" ? "skipped" : "failure";
@@ -169,7 +171,7 @@ jobs:
               completed_at: new Date().toISOString(),
               details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
               output: {
-                title: "Test",
+                title: process.env.NAME,
                 summary: `Result: \`${conclusion}\``,
                 text: `View logs: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
               }
@@ -187,51 +189,10 @@ jobs:
         uses: actions/github-script@v9
         env:
           RUN_ID: ${{ inputs.workflow-run-id }}
+          NAME: url-check
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          # REST API documentation:
-          # https://octokit.github.io/rest.js/ (for Javascript function names)
-          # https://docs.github.com/en/rest (for parameters and response specification)
-          script: |
-            const { data: workflowRun } = await github.rest.actions.getWorkflowRun({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              run_id: Number(process.env.RUN_ID),
-            });
-            core.notice(`The \`url-check\` job was triggered by this workflow run: ${workflowRun.html_url}`);
-            core.setOutput("workflow_run_event", workflowRun.event);
-
-            const { data } = await github.rest.checks.listForSuite({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              check_suite_id: workflowRun.check_suite_id,
-              // TODO consider using pagination
-            });
-
-            const checkRun = data.check_runs.find(run =>
-              run.name === "url-check" &&
-              run.head_sha === workflowRun.head_sha
-            );
-
-            if (!checkRun) {
-              core.warning(`No matching \`url-check\` check run found in workflow run's check suite. Usually this means that the triggering workflow failed, so tests are skipped here. See ${workflowRun.html_url}.`);
-              return;
-            }
-
-            core.setOutput("check_run_id", String(checkRun.id));
-            console.log("Found check run:", checkRun.id);
-
-            await github.rest.checks.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              check_run_id: checkRun.id,
-              details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              output: {
-                title: "URL Check",
-                summary: "URL check is running...",
-                text: `View logs: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
-              }
-            });
+          script: *locate-check-run-script
 
       - name: Determine whether tests should be skipped
         id: skip-check
@@ -257,7 +218,7 @@ jobs:
 
       - name: Run url-check  # requires STEX_API_KEY
         if: ${{ steps.skip-check.outputs.should-skip-test == 'false' }}
-        id: url-check-step
+        id: test-step
         uses: memo33/sc4pac-actions/actions/url-check@privileges
         with:
           path: ${{ runner.temp }}/untrusted-data/modified-yaml-files
@@ -269,26 +230,10 @@ jobs:
         env:
           # The test outcome will also be `skipped` if an earlier step fails,
           # but in that case we want to report a failure as test result, so we
-          # use `TEST_SKIPPED` using the same logic as for the url-check-step.
-          TEST_OUTCOME: ${{ steps.url-check-step.outcome }}
+          # use `TEST_SKIPPED` using the same logic as for the test-step.
+          TEST_OUTCOME: ${{ steps.test-step.outcome }}
           TEST_SKIPPED: ${{ steps.skip-check.outputs.should-skip-test == 'true' }}
+          NAME: url-check
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const conclusion =
-              process.env.TEST_OUTCOME === "success" ? "success" :
-              process.env.TEST_SKIPPED === "true" ? "skipped" : "failure";
-            await github.rest.checks.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              check_run_id: Number("${{ steps.locate.outputs.check_run_id }}"),
-              status: "completed",
-              conclusion,
-              completed_at: new Date().toISOString(),
-              details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              output: {
-                title: "URL Check",
-                summary: `Result: \`${conclusion}\``,
-                text: `View logs: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
-              }
-            });
+          script: *finish-check-run-script
