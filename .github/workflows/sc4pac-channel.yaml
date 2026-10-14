@@ -1,7 +1,7 @@
 name: sc4pac-channel
 description: |-
   Reusable workflow of common actions for building an sc4pac metadata channel.
-  Supported workflow triggers: 'push' and 'pull_request_target'.
+  Supported workflow triggers: 'push' and 'pull_request'.
 
 on:
   workflow_call:
@@ -18,138 +18,224 @@ on:
         description: The repository for deployment (to prevent deployment in forks) in the form 'OWNER/REPO'
         required: true
         type: string
+      channel-artifact-name:
+        description: Optionally, a custom name for the intermediate channel artifact.
+        required: false
+        type: string
+        default: channel-artifact.zip
+      skip-build-website:
+        description: Whether to skip building the main channel website (HTML files, etc.).
+        required: false
+        type: boolean
+        default: true
       sc4pac-tools-submodule:
         description: >-
-          If given, this is the relative path to a pinned sc4pac-tools submodule, which is used to build the website.
-          If absent, the website is not built, but only the channel JSON files.
+          Required only if `skip-build-website` is set to false.
+          This is the relative path to a pinned sc4pac-tools submodule, which is used to build the website.
         required: false
         type: string
         default: ''
-      use-stex-api:
-        description: Enable the url-check job. This requires a custom STEX_API_KEY. If disabled, the job is skipped.
-        required: false
-        type: boolean
-        default: false
       skip-test:
         description: Optionally skip the test job.
         required: false
         type: boolean
         default: false
-      test-only-PRs:
-        description: Do not run the test job on ordinary branch updates, but only on PRs. Only enable this if you do sufficient testing locally.
+      skip-url-check:
+        description: Whether to skip the url-check job, as it requires a custom `STEX_API_KEY`.
         required: false
         type: boolean
-        default: false
-      skip-pages-upload:
+        default: true
+      skip-deploy:
         description: >-
-          Skip upload and deployment to GitHub Pages. Instead, pass the built channel contents back to the calling workflow as an artifact for further processing (e.g. creating a coverage report).
+          Whether to skip the final deploy job of the channel.
+          This is useful when the built channel files from the artifact `outputs.channel-artifact-name` are processed further outside of this workflow.
         required: false
         type: boolean
         default: false
     outputs:
-      pages-artifact-name:
-        description: Name of the artifact containing the built pages directory. Only set if `skip-pages-upload` is enabled.
-        value: ${{ jobs.deploy.outputs.pages-artifact-name }}
-    secrets:
-      stex-api-key:
-        description: A private key for accessing the STEX API.
-        required: false
-      sc4pac-simtropolis-token:
-        description: A private token for downloading STEX files.
-        required: false
+      channel-artifact-name:
+        description: Name of the artifact containing the built channel files. Same as corresponding input if given.
+        value: ${{ jobs.build-channel.outputs.channel-artifact-name }}
+      website-artifact-name:
+        description: Name of the artifact containing the built website HTML files. Only present if `skip-build-website` is false.
+        value: ${{ jobs.build-website.outputs.website-artifact-name }}
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         persist-credentials: false
-        # For pull_request_target:
-        # As merge_commit_sha is not up-to-date due to mergeability check, we use actual PR head for now; see https://github.com/actions/checkout/issues/518#issuecomment-1757453837
-        # (This merge might correspond to a newer commit than the one that triggered this workflow, in case the PR was updated in the meantime -> ok)
-        ref: ${{ github.event_name == 'pull_request_target' && format('refs/pull/{0}/merge', github.event.pull_request.number) || '' }}
-        allow-unsafe-pr-checkout: true
         sparse-checkout: |
           ${{ inputs.path }}
     - name: Install sc4pac-lint
-      uses: memo33/sc4pac-actions/actions/setup-lint@main
+      uses: memo33/sc4pac-actions/actions/setup-lint@v2
     - name: Lint
       run: sc4pac-lint "$SRC_YAML"
       env:
         SRC_YAML: ${{ inputs.path }}
 
-  url-check:
-    # requires STEX_API_KEY, so job is skipped in forks
-    if: ${{ github.repository == inputs.deploy-repository && inputs.use-stex-api }}
+  build-channel:
+    needs: lint
     runs-on: ubuntu-latest
+    permissions:
+      checks: write
+    outputs:
+      channel-artifact-name: ${{ inputs.channel-artifact-name }}
     steps:
-    - name: Run url-check
-      uses: memo33/sc4pac-actions/actions/url-check@main
+    - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+        sparse-checkout: |
+          ${{ inputs.path }}
+    - name: Build channel
+      uses: memo33/sc4pac-actions/actions/build/channel@v2
       with:
         path: ${{ inputs.path }}
-        stex-api-key: ${{ secrets.stex-api-key }}
+        output-path: ${{ runner.temp }}/tmp_channel
+        channel-label: ${{ inputs.channel-label }}
+        metadata-source-url: ${{ format('https://github.com/{0}/blob/{1}/{2}/', github.repository, github.event.repository.default_branch, inputs.path) }}
+    - name: Upload channel artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.channel-artifact-name }}
+        path: ${{ runner.temp }}/tmp_channel
+        if-no-files-found: error
+        retention-days: 7
 
-  test:
-    needs: [ lint ]
-    if: ${{ inputs.skip-test == false && (github.event_name == 'pull_request_target' || inputs.test-only-PRs == false) }}
-    runs-on: ubuntu-latest
-    steps:
-    - name: Test installing modified packages
-      uses: memo33/sc4pac-actions/actions/test-install@main
+      # TODO If any of the following steps fails in the wild, consider moving them
+      # to a separate `pre-test` job to guarantee success of the `build-channel` job needed for `deploy`.
+    - name: Checkout and identify changes
+      if: ${{ !inputs.skip-test || !inputs.skip-url-check }}
+      id: identify-changes
+      uses: memo33/sc4pac-actions/actions/checkout-and-identify-changes@v2
       with:
         path: ${{ inputs.path }}
-        sc4pac-simtropolis-token: ${{ secrets.sc4pac-simtropolis-token }}
+        destination: tmp_repo_diff
+    - name: Upload list of modified packages as artifact
+      if: ${{ !inputs.skip-test }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: modified-packages-artifact
+        path: ${{ steps.identify-changes.outputs.modified-packages-list }}
+        if-no-files-found: error
+        retention-days: 7
+    - name: Create pending check for test job
+      if: ${{ !inputs.skip-test }}
+      uses: actions/github-script@v9
+      env:
+        NAME: test
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: &create-pending-check-run-script |
+          const res = await github.rest.checks.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            name: process.env.NAME,
+            head_sha: "${{ github.event.pull_request.head.sha || github.sha }}",
+            status: "in_progress",
+            output: {
+              title: process.env.NAME,
+              summary: "Waiting for test results..."
+            }
+          });
+
+    - name: Isolate the modified yaml files to prepare upload
+      if: ${{ !inputs.skip-url-check }}
+      env:
+        MODIFIED_YAML_LIST: ${{ steps.identify-changes.outputs.modified-files-list }}
+      run: |
+        tar -czf "$RUNNER_TEMP/modified-yaml-files.tar.gz" --files-from="$MODIFIED_YAML_LIST"
+    - name: Upload modified yaml files as artifact
+      if: ${{ !inputs.skip-url-check }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: modified-yaml-files.tar.gz
+        path: ${{ runner.temp }}/modified-yaml-files.tar.gz
+        if-no-files-found: error
+        retention-days: 7
+        archive: false
+    - name: Create pending check for url-check job
+      if: ${{ !inputs.skip-url-check }}
+      uses: actions/github-script@v9
+      env:
+        NAME: url-check
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: *create-pending-check-run-script
+
+  build-website:
+    needs: lint
+    if: |
+      !inputs.skip-build-website && inputs.sc4pac-tools-submodule != ''
+      && github.repository == inputs.deploy-repository
+      && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      && github.event_name != 'pull_request_target' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+    outputs:
+      website-artifact-name: website-artifact.zip
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+        submodules: recursive
+    - name: Build website
+      uses: memo33/sc4pac-actions/actions/build/website@v2
+      with:
+        sc4pac-tools-submodule: ${{ inputs.sc4pac-tools-submodule }}
+        pages-output-path: ${{ runner.temp }}/tmp_gh-pages
+    - name: Upload website artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: website-artifact.zip
+        path: ${{ runner.temp }}/tmp_gh-pages
+        if-no-files-found: error
+        retention-days: 7
 
   deploy:
-    needs: lint  # url-check is not needed as ST is flaky
-    if: ${{ github.repository == inputs.deploy-repository && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request_target' }}
+    needs: [ build-channel, build-website ]
+    if: |
+      always()
+      && !inputs.skip-deploy
+      && (needs.build-channel.result == 'success')
+      && (needs.build-website.result == 'success' || needs.build-website.result == 'skipped')
+      && github.repository == inputs.deploy-repository
+      && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      && github.event_name != 'pull_request_target' && github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    outputs:
-      pages-artifact-name: ${{ inputs.skip-pages-upload && 'channel-pages' || '' }}
     # Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
     # However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
     concurrency:
       group: "pages"
       cancel-in-progress: false
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v6
-      with:
-        persist-credentials: false
-        submodules: recursive
-    - name: Build channel and website
-      uses: memo33/sc4pac-actions/actions/build@main
-      with:
-        path: ${{ inputs.path }}
-        pages-output-path: 'tmp_gh-pages'
-        sc4pac-tools-submodule: ${{ inputs.sc4pac-tools-submodule }}
-        channel-label: ${{ inputs.channel-label }}
-        metadata-source-url: ${{ format('https://github.com/{0}/blob/{1}/{2}/', github.repository, github.event.repository.default_branch, inputs.path) }}
-    - name: Upload built pages as intermediate artifact
-      id: upload-intermediate
-      if: ${{ inputs.skip-pages-upload }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: channel-pages
-        path: 'tmp_gh-pages'
-        if-no-files-found: error
-    - name: Setup Pages
-      if: ${{ !inputs.skip-pages-upload }}
-      uses: actions/configure-pages@v6
-    - name: Upload artifact
-      if: ${{ !inputs.skip-pages-upload }}
-      # note that this action dereferences our `latest` symlinks, but that's not a huge problem, it just duplicates each json file (could maybe be avoided by using tar)
-      uses: actions/upload-pages-artifact@v5
-      with:
-        path: 'tmp_gh-pages'
-    - name: Deploy to GitHub Pages
-      if: ${{ !inputs.skip-pages-upload }}
-      id: deployment
-      uses: actions/deploy-pages@v5
     permissions:
       pages: write
       id-token: write
+    steps:
+    - name: Download website artifact
+      if: ${{ needs.build-website.result != 'skipped' }}
+      uses: actions/download-artifact@v8
+      with:
+        name: website-artifact.zip
+        path: ${{ runner.temp }}/gh-pages
+    - name: Download channel artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.channel-artifact-name }}
+        path: ${{ runner.temp }}/gh-pages/channel
+    - name: Setup Pages
+      uses: actions/configure-pages@v6
+    - name: Upload artifact
+      # note that this action dereferences our `latest` symlinks, but that's not a huge problem, it just duplicates each json file (could maybe be avoided by using tar)
+      uses: actions/upload-pages-artifact@v5
+      with:
+        path: ${{ runner.temp }}/gh-pages
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v5
