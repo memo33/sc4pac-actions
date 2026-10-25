@@ -39,19 +39,19 @@ jobs:
       updated-files: ${{ steps.check.outputs.updated-files }}
       has-updates: ${{ steps.check.outputs.has-updates }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: true
           token: ${{ secrets.pat }}
       - id: check
-        uses: memo33/sc4pac-actions/actions/update/check-updates@main
+        uses: memo33/sc4pac-actions/actions/update/check-updates@v2
         with:
           path: ${{ inputs.path }}
           api: ${{ inputs.api }}
           stex-api-key: ${{ secrets.stex-api-key }}
           reports-dir: api_reports
       - name: Upload reports artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports.zip
           path: api_reports/
@@ -79,11 +79,11 @@ jobs:
       matrix:
         yaml-path: ${{ fromJson(needs.check-updates.outputs.updated-files) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Download reports artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: reports.zip
           path: ${{ format('{0}/api_reports', runner.temp) }}
@@ -99,7 +99,7 @@ jobs:
           SRC_YAML: ${{ inputs.path }}
           YAML_PATH: ${{ matrix.yaml-path }}
       - name: Create current patch
-        uses: memo33/sc4pac-actions/actions/update/create-patch@main
+        uses: memo33/sc4pac-actions/actions/update/create-patch@v2
         id: patch
         with:
           path: ${{ matrix.yaml-path }}
@@ -120,7 +120,7 @@ jobs:
           UPDATE_LOG: ${{ steps.patch.outputs.update-log }}
           YAML_PATH: ${{ matrix.yaml-path }}
       - name: Create or update PR
-        uses: memo33/sc4pac-actions/actions/update/create-pr@main
+        uses: memo33/sc4pac-actions/actions/update/create-pr@v2
         with:
           path: ${{ matrix.yaml-path }}
           patch-file: ${{ steps.patch.outputs.patch-file }}
