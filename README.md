@@ -29,7 +29,6 @@ jobs:
     permissions:
       pages: write                   # to deploy to GitHub Pages
       id-token: write                # to verify the deployment originates from an appropriate source
-      checks: write                  # to create placeholder checks for the subsequent sc4pac-test workflow
 ```
 (For more detailed input and output arguments, see `.github/workflows/sc4pac-channel.yaml`.)
 

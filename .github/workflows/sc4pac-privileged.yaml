@@ -51,18 +51,19 @@ jobs:
       contents: read
       checks: write
     steps:
-      - name: Find the check run created by the original workflow
+      - name: Create a pending check run at the original workflow's check suite (if tests should run)
         id: locate
         uses: actions/github-script@v9
         env:
           RUN_ID: ${{ inputs.workflow-run-id }}
           NAME: test
+          GATE_JOB_NAME: build-channel
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # REST API documentation:
           # https://octokit.github.io/rest.js/ (for Javascript function names)
           # https://docs.github.com/en/rest (for parameters and response specification)
-          script: &locate-check-run-script |
+          script: &create-check-run-script |
             const { data: workflowRun } = await github.rest.actions.getWorkflowRun({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -71,30 +72,26 @@ jobs:
             core.notice(`The \`${process.env.NAME}\` job was triggered by this workflow run: ${workflowRun.html_url}`);
             core.setOutput("workflow_run_event", workflowRun.event);
 
-            const { data } = await github.rest.checks.listForSuite({
+            const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              check_suite_id: workflowRun.check_suite_id,
-              // TODO consider using pagination
+              run_id: Number(process.env.RUN_ID),
             });
+            const buildJob = jobs.jobs.find(job => job.name === process.env.GATE_JOB_NAME || job.name.endsWith(`/ ${process.env.GATE_JOB_NAME}`));
+            console.log(`${process.env.GATE_JOB_NAME} conclusion: ${buildJob?.conclusion}`);
+            const buildSucceeded = buildJob?.conclusion === "success";
 
-            const checkRun = data.check_runs.find(run =>
-              run.name === process.env.NAME &&
-              run.head_sha === workflowRun.head_sha
-            );
-
-            if (!checkRun) {
-              core.warning(`No matching \`${process.env.NAME}\` check run found in workflow run's check suite. Usually this means that the triggering workflow failed, so tests are skipped here. See ${workflowRun.html_url}.`);
+            if (!buildSucceeded) {
+              core.warning(`The \`${process.env.GATE_JOB_NAME}\` job was not successful in the triggering workflow, so tests for \`${process.env.NAME}\` are skipped here. See ${workflowRun.html_url}.`);
               return;
             }
 
-            core.setOutput("check_run_id", String(checkRun.id));
-            console.log("Found check run:", checkRun.id);
-
-            await github.rest.checks.update({
+            const { data: checkRun } = await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              check_run_id: checkRun.id,
+              name: process.env.NAME,
+              head_sha: workflowRun.head_sha,
+              status: "in_progress",
               details_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
               output: {
                 title: process.env.NAME,
@@ -102,6 +99,9 @@ jobs:
                 text: `View logs: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
               }
             });
+
+            core.setOutput("check_run_id", String(checkRun.id));
+            console.log("Check run ID:", checkRun.id);
 
       - name: Determine whether tests should be skipped
         id: skip-check
@@ -185,15 +185,16 @@ jobs:
       contents: read
       checks: write
     steps:
-      - name: Find the check run created by the original workflow
+      - name: Create a pending check run at the original workflow's check suite (if tests should run)
         id: locate
         uses: actions/github-script@v9
         env:
           RUN_ID: ${{ inputs.workflow-run-id }}
           NAME: url-check
+          GATE_JOB_NAME: build-channel
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: *locate-check-run-script
+          script: *create-check-run-script
 
       - name: Determine whether tests should be skipped
         id: skip-check
