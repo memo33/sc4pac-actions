@@ -1,24 +1,44 @@
 name: setup
 description: Set up sc4pac by downloading and installing the latest release
 
+inputs:
+  version:
+    description: The sc4pac version tag to install
+    default: latest
+outputs:
+  version:
+    description: The actual version installed, i.e. what `latest` resolves to
+    value: ${{ steps.get-release-info.outputs.version }}
+
 runs:
   using: composite
   steps:
-  - name: Get latest sc4pac release
+  - name: Get sc4pac release info
+    uses: actions/github-script@v9
     id: get-release-info
-    shell: bash
-    working-directory: ${{ github.action_path }}
-    run: |
-      : Get latest sc4pac release
-      SC4PAC_ZIP_URL="$(curl -s https://api.github.com/repos/memo33/sc4pac-tools/releases/latest | grep browser_download_url | cut -d '"' -f 4)"
-      echo "url=$SC4PAC_ZIP_URL" >> $GITHUB_OUTPUT
-      SC4PAC_VERSION="$(echo "$SC4PAC_ZIP_URL" | cut -d '/' -f 8)"
-      echo "version=$SC4PAC_VERSION" >> $GITHUB_OUTPUT
+    env:
+      REQUESTED_VERSION: ${{ inputs.version }}
+    with:
+      script: |
+        const { data: release } = await (process.env.REQUESTED_VERSION === 'latest'
+          ? github.rest.repos.getLatestRelease({owner: "memo33", repo: "sc4pac-tools"})
+          : github.rest.repos.getReleaseByTag({owner: "memo33", repo: "sc4pac-tools", tag: process.env.REQUESTED_VERSION})
+        );
+        core.setOutput('version', release.tag_name);
+
+        const asset = release.assets.find(a => /^sc4pac-.*\.zip$/i.test(a.name));
+        if (!asset) throw new Error('No release asset matching sc4pac-*.zip');
+        if (!asset.digest?.startsWith('sha256:')) {
+          throw new Error(`No SHA-256 digest published for ${asset.name}`);
+        }
+        core.setOutput('url', asset.browser_download_url);
+        core.setOutput('asset-name', asset.name);
+        core.setOutput('sha256', asset.digest.slice('sha256:'.length));
 
   - uses: actions/cache@v6
     id: cache-sc4pac
     with:
-      path: ${{ format('{0}/sc4pac-latest.zip', github.action_path) }}
+      path: ${{ github.action_path }}/${{ steps.get-release-info.outputs.asset-name }}
       key: sc4pac-zip-${{ steps.get-release-info.outputs.version }}-${{ runner.os }}
 
   - name: Download sc4pac
@@ -26,18 +46,31 @@ runs:
     shell: bash
     working-directory: ${{ github.action_path }}
     run: |
-      : Download sc4pac
-      curl -s -L "$SC4PAC_ZIP_URL" > sc4pac-latest.zip
+      curl --silent -L \
+        --retry 4 \
+        --retry-max-time 60 \
+        --output "$ASSET_NAME" \
+        "$SC4PAC_ZIP_URL"
     env:
       SC4PAC_ZIP_URL: ${{ steps.get-release-info.outputs.url }}
+      ASSET_NAME: ${{ steps.get-release-info.outputs.asset-name }}
+
+  - name: Verify SHA-256
+    shell: bash
+    working-directory: ${{ github.action_path }}
+    run: |
+      echo "$SC4PAC_SHA256  $ASSET_NAME" | sha256sum --check --status -
+    env:
+      SC4PAC_SHA256: ${{ steps.get-release-info.outputs.sha256 }}
+      ASSET_NAME: ${{ steps.get-release-info.outputs.asset-name }}
 
   - name: Install sc4pac
     shell: bash
     working-directory: ${{ github.action_path }}
     run: |
-      : Install sc4pac
-      sudo unzip -q -d /usr/local/lib/sc4pac sc4pac-latest.zip
+      sudo unzip -q -d /usr/local/lib/sc4pac "$ASSET_NAME"
       sudo ln -s /usr/local/lib/sc4pac/sc4pac /usr/local/bin/sc4pac
       echo "Installed sc4pac version: $SC4PAC_VERSION"
     env:
       SC4PAC_VERSION: ${{ steps.get-release-info.outputs.version }}
+      ASSET_NAME: ${{ steps.get-release-info.outputs.asset-name }}
