@@ -1,11 +1,10 @@
 name: url-check
 description: >-
-  Compares two commits to find modified files.
-  Then checks whether asset URLs in modified files are up-to-date using the STEX API (which requires API key).
+  Checks whether asset URLs in modified yaml files are up-to-date using the STEX API (which requires API key).
 
 inputs:
   path:
-    description: Source folder containing yaml files to analyze
+    description: Source folder containing only relevant yaml files to analyze
     required: true
   stex-api-key:
     description: Required secret token for accessing the STEX API.
@@ -15,13 +14,8 @@ outputs: {}
 runs:
   using: composite
   steps:
-    - name: Checkout and identify changes
-      uses: memo33/sc4pac-actions/actions/checkout-and-identify-changes@main
-      with:
-        path: ${{ inputs.path }}
-        destination: dest
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: '3.x'
     - name: Install dependencies
@@ -31,9 +25,7 @@ runs:
       shell: bash
       env:
         STEX_API_KEY: ${{ inputs.stex-api-key }}
+        YAML_PATH: ${{ inputs.path }}
       run: |
-        : Check STEX URLs
         echo $(printf '%.s─' $(seq 1 80))  # horizontal line
-        cd "dest"
-        cat "$GITHUB_WORKSPACE/modified-yaml-files.txt" \
-          | xargs --delimiter '\n' python "$GITHUB_ACTION_PATH/../../src/check-updates.py" --api=stex --mode=id
+        python "$GITHUB_ACTION_PATH/../../src/check-updates.py" --api=stex --mode=id -- "$YAML_PATH"
