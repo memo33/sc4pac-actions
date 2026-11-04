@@ -70,6 +70,7 @@ runs:
       id: get-assets-list
       env:
         PKGS_LIST: ${{ inputs.packages-list }}
+        SC4PAC_MONO_CMD: ${{ github.action_path }}/mono-wrapper.sh
       run: |
         assets_list="$(cat "$PKGS_LIST" \
           | xargs --delimiter '\n' sc4pac test --yes --list-assets -- \
@@ -93,6 +94,7 @@ runs:
         SC4PAC_SIMTROPOLIS_TOKEN: ${{ inputs.sc4pac-simtropolis-token }}
         # enforce ANSI colors with GH actions:
         SC4PAC_JAVA_OPTIONS: '-Djansi.mode=force -XX:+IgnoreUnrecognizedVMOptions --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED'
+        SC4PAC_MONO_CMD: ${{ github.action_path }}/mono-wrapper.sh
         PKGS_LIST: ${{ inputs.packages-list }}
       run: |
         cat "$PKGS_LIST" \
@@ -111,6 +113,7 @@ runs:
         SC4PAC_SIMTROPOLIS_TOKEN: ${{ inputs.sc4pac-simtropolis-token }}
         # enforce ANSI colors with GH actions:
         SC4PAC_JAVA_OPTIONS: '-Djansi.mode=force -XX:+IgnoreUnrecognizedVMOptions --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED'
+        SC4PAC_MONO_CMD: ${{ github.action_path }}/mono-wrapper.sh
         PKGS_LIST: ${{ inputs.packages-list }}
       run: |
         cat "$PKGS_LIST" \
